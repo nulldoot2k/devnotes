@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DevNotes — Đặt lại mật khẩu</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Sora:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+
+    .auth-wrap    { width: 100%; max-width: 400px; padding: 20px; }
+    .auth-logo    { font-family: var(--mono); font-size: 22px; font-weight: 700; color: var(--accent); text-align: center; margin-bottom: 8px; }
+    .auth-logo span { color: var(--text2); }
+    .auth-subtitle { text-align: center; color: var(--text3); font-size: 13px; margin-bottom: 32px; }
+
+    .auth-card {
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 16px;
+      padding: 32px 28px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.5);
+    }
+
+    .auth-title { font-size: 17px; font-weight: 700; margin-bottom: 6px; color: var(--text); }
+    .auth-desc  { font-size: 12.5px; color: var(--text3); margin-bottom: 22px; line-height: 1.6; }
+
+    .auth-error {
+      background: rgba(255,107,107,.1);
+      border: 1px solid rgba(255,107,107,.3);
+      border-radius: 8px; padding: 10px 14px;
+      font-size: 12.5px; color: var(--accent3);
+      margin-bottom: 16px; display: none;
+    }
+    .auth-success {
+      background: rgba(79,255,176,.08);
+      border: 1px solid rgba(79,255,176,.25);
+      border-radius: 8px; padding: 10px 14px;
+      font-size: 12.5px; color: var(--accent);
+      margin-bottom: 16px; display: none;
+    }
+
+    /* Steps */
+    .step { display: none; }
+    .step.active { display: block; }
+
+    /* OTP sent hint */
+    .tg-hint {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 20px;
+      font-size: 12.5px;
+      color: var(--text2);
+      line-height: 1.5;
+    }
+    .tg-hint-icon { font-size: 22px; flex-shrink: 0; }
+
+    .btn-full { width: 100%; justify-content: center; padding: 11px; font-size: 14px; }
+
+    .back-link {
+      display: block; text-align: center;
+      margin-top: 16px; font-size: 12px;
+      color: var(--text3); text-decoration: none;
+    }
+    .back-link:hover { color: var(--accent2); }
+
+    .input-icon-wrap { position: relative; }
+    .input-icon-wrap .form-input { padding-right: 40px; }
+    .input-toggle {
+      position: absolute; right: 10px; top: 50%;
+      transform: translateY(-50%);
+      background: none; border: none;
+      color: var(--text3); cursor: pointer;
+      font-size: 15px; padding: 4px;
+    }
+    .input-toggle:hover { color: var(--text2); }
+
+    /* Cooldown countdown */
+    .resend-row {
+      text-align: center;
+      margin-top: 12px;
+      font-size: 12px;
+      color: var(--text3);
+    }
+    .resend-btn {
+      background: none; border: none;
+      color: var(--accent2); cursor: pointer;
+      font-size: 12px; font-family: var(--sans);
+      padding: 0; text-decoration: underline;
+    }
+    .resend-btn:disabled { color: var(--text3); text-decoration: none; cursor: default; }
+  </style>
+</head>
+<body>
+  <div class="auth-wrap">
+    <div class="auth-logo">dev<span>/</span>notes</div>
+    <div class="auth-subtitle">Interview Knowledge Base</div>
+
+    <div class="auth-card">
+
+      <!-- ── Step 1: Bấm gửi OTP ── -->
+      <div class="step active" id="step1">
+        <div class="auth-title">🔑 Đặt lại mật khẩu</div>
+        <div class="auth-desc">Bấm nút bên dưới, OTP sẽ được gửi vào Telegram của bạn.</div>
+
+        <div class="auth-error" id="s1Error"></div>
+
+        <button class="btn btn-accent btn-full" id="btnSendOtp">
+          📨 Gửi OTP qua Telegram
+        </button>
+        <a href="/login" class="back-link">← Quay lại đăng nhập</a>
+      </div>
+
+      <!-- ── Step 2: Nhập OTP + mật khẩu mới ── -->
+      <div class="step" id="step2">
+        <div class="auth-title">✅ Nhập OTP & mật khẩu mới</div>
+
+        <div class="tg-hint">
+          <div class="tg-hint-icon">💬</div>
+          <div>OTP đã được gửi vào <strong>Telegram</strong>. Kiểm tra bot và nhập mã vào bên dưới.</div>
+        </div>
+
+        <div class="auth-error"   id="s2Error"></div>
+        <div class="auth-success" id="s2Success"></div>
+
+        <div class="form-group">
+          <label class="form-label">Mã OTP (6 chữ số)</label>
+          <input type="text" class="form-input" id="fpOtp"
+                 placeholder="123456" maxlength="6"
+                 inputmode="numeric" autocomplete="one-time-code">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Mật khẩu mới</label>
+          <div class="input-icon-wrap">
+            <input type="password" class="form-input" id="fpNewPw"
+                   placeholder="Tối thiểu 8 ký tự">
+            <button class="input-toggle" type="button" id="toggleNewPw">👁</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Xác nhận mật khẩu</label>
+          <input type="password" class="form-input" id="fpConfirmPw"
+                 placeholder="Nhập lại mật khẩu">
+        </div>
+
+        <button class="btn btn-accent btn-full" id="btnResetPw">
+          🔐 Đặt lại mật khẩu
+        </button>
+
+        <!-- Resend với cooldown 60s -->
+        <div class="resend-row">
+          Không nhận được OTP?
+          <button class="resend-btn" id="btnResend" disabled>Gửi lại (<span id="cdCount">60</span>s)</button>
+        </div>
+
+        <a href="/login" class="back-link">← Quay lại đăng nhập</a>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    // ── Helpers ──────────────────────────────────────────────────
+    function showStep(n) {
+      document.querySelectorAll(".step").forEach(s => s.classList.remove("active"));
+      document.getElementById("step" + n).classList.add("active");
+    }
+
+    function setMsg(id, msg) {
+      const el = document.getElementById(id);
+      el.textContent = msg;
+      el.style.display = msg ? "block" : "none";
+    }
+
+    // ── Cooldown timer ───────────────────────────────────────────
+    let cdTimer = null;
+
+    function startCooldown(seconds = 60) {
+      const btn   = document.getElementById("btnResend");
+      const count = document.getElementById("cdCount");
+      let left = seconds;
+      btn.disabled = true;
+      count.textContent = left;
+
+      cdTimer = setInterval(() => {
+        left--;
+        count.textContent = left;
+        if (left <= 0) {
+          clearInterval(cdTimer);
+          btn.disabled = false;
+          btn.textContent = "Gửi lại OTP";
+        }
+      }, 1000);
+    }
+
+    // ── Gửi OTP ──────────────────────────────────────────────────
+    async function sendOtp(btn) {
+      btn.disabled = true;
+      const origText = btn.textContent;
+      btn.textContent = "Đang gửi…";
+      setMsg("s1Error", "");
+
+      try {
+        const res  = await fetch("/api/auth/forgot-password", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({}),
+        });
+        const data = await res.json();
+        if (!res.ok) { setMsg("s1Error", data.error || "Gửi thất bại"); return; }
+
+        showStep(2);
+        startCooldown(60);
+        setTimeout(() => document.getElementById("fpOtp").focus(), 100);
+      } catch (e) {
+        setMsg("s1Error", "Lỗi kết nối server");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
+    }
+
+    document.getElementById("btnSendOtp").addEventListener("click", function() {
+      sendOtp(this);
+    });
+
+    // Resend button
+    document.getElementById("btnResend").addEventListener("click", async function() {
+      this.disabled = true;
+      this.textContent = "Đang gửi…";
+      setMsg("s2Error", "");
+      try {
+        const res = await fetch("/api/auth/forgot-password", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({}),
+        });
+        if (res.ok) startCooldown(60);
+        else {
+          const d = await res.json();
+          setMsg("s2Error", d.error || "Gửi lại thất bại");
+          this.disabled = false;
+          this.textContent = "Gửi lại OTP";
+        }
+      } catch (e) {
+        setMsg("s2Error", "Lỗi kết nối server");
+        this.disabled = false;
+        this.textContent = "Gửi lại OTP";
+      }
+    });
+
+    // ── Toggle password visibility ────────────────────────────────
+    document.getElementById("toggleNewPw").addEventListener("click", () => {
+      const pw = document.getElementById("fpNewPw");
+      pw.type = pw.type === "password" ? "text" : "password";
+    });
+
+    // ── Đặt lại mật khẩu ─────────────────────────────────────────
+    document.getElementById("btnResetPw").addEventListener("click", async function() {
+      const otp     = document.getElementById("fpOtp").value.trim();
+      const newPw   = document.getElementById("fpNewPw").value;
+      const confirm = document.getElementById("fpConfirmPw").value;
+
+      setMsg("s2Error", ""); setMsg("s2Success", "");
+
+      if (!otp || otp.length !== 6)  { setMsg("s2Error", "OTP phải đúng 6 chữ số"); return; }
+      if (newPw.length < 8)          { setMsg("s2Error", "Mật khẩu tối thiểu 8 ký tự"); return; }
+      if (newPw !== confirm)          { setMsg("s2Error", "Mật khẩu xác nhận không khớp"); return; }
+
+      this.disabled = true;
+      this.textContent = "Đang xử lý…";
+
+      try {
+        const res  = await fetch("/api/auth/reset-password", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ otp, new_password: newPw }),
+        });
+        const data = await res.json();
+        if (!res.ok) { setMsg("s2Error", data.error); return; }
+
+        setMsg("s2Success", "✅ Mật khẩu đã cập nhật! Đang chuyển về trang đăng nhập…");
+        clearInterval(cdTimer);
+        setTimeout(() => window.location.href = "/login", 2000);
+      } catch (e) {
+        setMsg("s2Error", "Lỗi kết nối server");
+      } finally {
+        this.disabled = false;
+        this.textContent = "🔐 Đặt lại mật khẩu";
+      }
+    });
+
+    // ── Enter key ────────────────────────────────────────────────
+    document.addEventListener("keydown", e => {
+      if (e.key !== "Enter") return;
+      if (document.getElementById("step1").classList.contains("active"))
+        document.getElementById("btnSendOtp").click();
+      if (document.getElementById("step2").classList.contains("active"))
+        document.getElementById("btnResetPw").click();
+    });
+  </script>
+</body>
+</html>

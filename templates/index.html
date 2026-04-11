@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DevNotes — Interview Knowledge Base</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Sora:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<!-- ── Header ─────────────────────────────────────── -->
+<header>
+  <div class="logo">dev<span>/</span>notes</div>
+  <div class="header-actions">
+    <span class="header-user" id="headerUser"></span>
+    <button class="btn btn-ghost btn-sm" id="btnImport">⬆ Import JSON</button>
+    <button class="btn btn-ghost btn-sm" id="btnExport">⬇ Export JSON</button>
+    <button class="btn btn-accent"       id="btnAdd">+ Thêm Note</button>
+    <button class="btn btn-ghost btn-sm" id="btnLogout" title="Đăng xuất">⏻</button>
+  </div>
+</header>
+
+<!-- ── App ────────────────────────────────────────── -->
+<div class="app">
+
+  <!-- Sidebar -->
+  <aside>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Tìm kiếm</div>
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="searchInput" placeholder="Tìm câu hỏi, nội dung… (Ctrl+K)">
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Thống kê</div>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-num" id="statTotal">–</div>
+          <div class="stat-label">Tổng notes</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="statTopics">–</div>
+          <div class="stat-label">Chủ đề</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Chủ đề</div>
+      <div class="topic-list" id="topicList"></div>
+      <div class="new-topic-form">
+        <input type="text" id="newTopicInput" placeholder="+ Thêm chủ đề…">
+        <button class="btn btn-ghost btn-sm" id="btnAddTopic">+</button>
+      </div>
+    </div>
+
+    <div class="sidebar-bottom">
+      <div class="sidebar-label">Phím tắt</div>
+      <div class="shortcut-list">
+        <div class="shortcut-row"><span>Tìm kiếm</span><kbd>Ctrl+K</kbd></div>
+        <div class="shortcut-row"><span>Note mới</span><kbd>Ctrl+N</kbd></div>
+        <div class="shortcut-row"><span>Đóng</span><kbd>Esc</kbd></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main>
+    <div class="main-toolbar">
+      <div class="toolbar-left">
+        <div class="view-title"  id="viewTitle">Tất cả Notes</div>
+        <div class="view-subtitle" id="viewSubtitle"></div>
+      </div>
+      <div class="toolbar-right">
+        <span class="result-badge" id="resultBadge"></span>
+        <button class="btn btn-ghost btn-sm" id="btnClearFilter">Tất cả</button>
+      </div>
+    </div>
+
+    <div class="notes-area">
+      <div class="notes-grid" id="notesGrid">
+        <div class="loading">Đang tải…</div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ══════════════════════════════════════════
+     Modal: Thêm / Sửa Note
+══════════════════════════════════════════ -->
+<div class="modal-overlay" id="modalNote">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modalNoteTitle">✏️ Thêm Note Mới</div>
+      <button class="close-btn" data-close="modalNote">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="fNoteId">
+
+      <div class="form-group">
+        <label class="form-label">Câu hỏi / Tiêu đề *</label>
+        <input type="text" class="form-input" id="fQuestion"
+               placeholder="VD: VM và k8s khác nhau như nào?">
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Chủ đề</label>
+          <select class="form-select" id="fTopic">
+            <option value="">— Chưa phân loại —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Tags (cách nhau dấu phẩy)</label>
+          <input type="text" class="form-input" id="fTags"
+                 placeholder="k8s, devops, interview">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Nội dung / Câu trả lời *</label>
+        <div class="md-toolbar">
+          <button type="button" class="md-btn" data-md="bold" title="Bold"><b>B</b></button>
+          <button type="button" class="md-btn" data-md="italic" title="Italic"><i>I</i></button>
+          <button type="button" class="md-btn" data-md="code" title="Inline code">`c`</button>
+          <button type="button" class="md-btn" data-md="codeblock" title="Code block">```</button>
+          <div class="md-sep"></div>
+          <button type="button" class="md-btn" data-md="h2" title="Heading 2">H2</button>
+          <button type="button" class="md-btn" data-md="h3" title="Heading 3">H3</button>
+          <div class="md-sep"></div>
+          <button type="button" class="md-btn" data-md="ul" title="Bullet list">• list</button>
+          <button type="button" class="md-btn" data-md="ol" title="Numbered list">1. list</button>
+          <button type="button" class="md-btn" data-md="blockquote" title="Blockquote">❝</button>
+          <div class="md-sep"></div>
+          <button type="button" class="md-btn md-btn--preview" id="btnMdPreview">👁 Preview</button>
+        </div>
+        <textarea class="form-textarea" id="fContent"
+                  placeholder="Hỗ trợ Markdown: **bold**, `code`, ## heading, - list…"></textarea>
+        <div class="md-preview" id="mdPreview" style="display:none"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" data-close="modalNote">Hủy</button>
+      <button class="btn btn-accent" id="btnSaveNote">💾 Lưu Note</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     Modal: Chi tiết Note
+══════════════════════════════════════════ -->
+<div class="modal-overlay" id="modalDetail">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <div class="modal-title">📖 Chi tiết Note</div>
+      <button class="close-btn" data-close="modalDetail">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="detail-meta"     id="detailMeta"></div>
+      <div class="detail-question" id="detailQuestion"></div>
+      <div class="detail-answer"   id="detailAnswer"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger btn-sm" id="detailDeleteBtn">🗑 Xóa</button>
+      <button class="btn btn-ghost"         data-close="modalDetail">Đóng</button>
+      <button class="btn btn-accent"        id="detailEditBtn">✏️ Chỉnh sửa</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     Modal: Import JSON
+══════════════════════════════════════════ -->
+<div class="modal-overlay" id="modalImport">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">⬆️ Import JSON</div>
+      <button class="close-btn" data-close="modalImport">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="import-area" id="importDropZone">
+        <div class="import-area-icon">📂</div>
+        <div class="import-area-text">Click để chọn hoặc kéo thả file JSON</div>
+        <div class="import-area-sub">Hỗ trợ file export từ DevNotes hoặc mảng JSON tùy chỉnh</div>
+        <input type="file" id="fileInput" accept=".json">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Hoặc paste JSON trực tiếp</label>
+        <textarea class="form-textarea form-textarea-mono" id="pasteJson"
+                  placeholder='[{"question":"...","content":"...","topic":"Tên chủ đề","tags":["tag1"]}]'
+                  style="min-height:110px"></textarea>
+      </div>
+
+      <div class="import-hint">
+        <strong>Format:</strong> Mảng JSON với <code>question</code>, <code>content</code>,
+        <code>topic</code> (tên string), <code>tags</code> (mảng string).
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" data-close="modalImport">Hủy</button>
+      <button class="btn btn-accent" id="btnDoImport">⬆ Import</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div id="toastContainer"></div>
+
+<script>
+  // Auth guard: redirect nếu chưa có token
+  (function() {
+    const token = localStorage.getItem("dn_token");
+    if (!token) window.location.href = "/login";
+    else {
+      const user = localStorage.getItem("dn_user") || "";
+      const el = document.getElementById ? null : null; // wait for DOM
+      window.addEventListener("DOMContentLoaded", () => {
+        const el = document.getElementById("headerUser");
+        if (el) el.textContent = "👤 " + user;
+      });
+    }
+  })();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+<script src="/static/js/api.js"></script>
+<script src="/static/js/ui.js"></script>
+<script src="/static/js/app.js"></script>
+</body>
+</html>

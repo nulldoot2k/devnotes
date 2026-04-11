@@ -1,0 +1,85 @@
+services:
+  # devnotes:
+  #   build: .
+  #   container_name: devnotes
+  #   restart: unless-stopped
+  #   ports:
+  #     - "5000:5000"
+  #   env_file:
+  #     - .env
+  #   volumes:
+  #     - devnotes_data:/app/data
+  #   networks:
+  #     - devnotes_net
+  #   healthcheck:
+  #     test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/login')"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 15s
+
+  # ── PostgreSQL (bỏ comment nếu muốn dùng) ────────────────────
+  # postgres:
+  #   image: postgres:16-alpine
+  #   container_name: devnotes_postgres
+  #   restart: unless-stopped
+  #   environment:
+  #     POSTGRES_USER:     devnotes
+  #     POSTGRES_PASSWORD: strongpassword
+  #     POSTGRES_DB:       devnotes
+  #   volumes:
+  #     - pg_data:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD", "pg_isready", "-U", "devnotes"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+  # ── MySQL (bỏ comment nếu muốn dùng) ─────────────────────────
+  # mysql:
+  #   image: mysql:8
+  #   container_name: devnotes_mysql
+  #   restart: unless-stopped
+  #   environment:
+  #     MYSQL_USER:          devnotes
+  #     MYSQL_PASSWORD:      strongpassword
+  #     MYSQL_DATABASE:      devnotes
+  #     MYSQL_ROOT_PASSWORD: rootpassword
+  #   volumes:
+  #     - mysql_data:/var/lib/mysql
+  #   healthcheck:
+  #     test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "devnotes", "-pstrongpassword"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+  # ── MongoDB (bỏ comment nếu muốn dùng) ───────────────────────
+  mongodb:
+    image: mongo:7
+    container_name: devnotes_mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: devnotes
+      MONGO_INITDB_ROOT_PASSWORD: strongpassword
+      MONGO_INITDB_DATABASE:      devnotes
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - devnotes_net
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  devnotes_data:
+  # pg_data:
+  # mysql_data:
+  mongo_data:
+
+networks:
+  devnotes_net:
+    driver: bridge

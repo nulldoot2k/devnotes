@@ -385,11 +385,31 @@ const App = (() => {
     // Header buttons
     document.getElementById("btnAdd").addEventListener("click", openAddModal);
 
+    // Change password → navigate to forgot page (tab "change")
+    const changePwBtn = document.getElementById("btnChangePassword");
+    if (changePwBtn) changePwBtn.addEventListener("click", () => {
+      window.location.href = "/forgot-password";
+    });
+
     // Logout
     const logoutBtn = document.getElementById("btnLogout");
     if (logoutBtn) logoutBtn.addEventListener("click", () => {
       if (confirm("Đăng xuất?")) API.logout();
     });
+
+    // ── User dropdown toggle ──────────────────────────────
+    const btnUserMenu  = document.getElementById("btnUserMenu");
+    const userDropdown = document.getElementById("userDropdown");
+    if (btnUserMenu && userDropdown) {
+      btnUserMenu.addEventListener("click", e => {
+        e.stopPropagation();
+        userDropdown.classList.toggle("show");
+      });
+      // Đóng khi click ra ngoài
+      document.addEventListener("click", () => userDropdown.classList.remove("show"));
+      // Giữ mở khi click bên trong dropdown
+      userDropdown.addEventListener("click", e => e.stopPropagation());
+    }
 
     // Show username
     const userEl = document.getElementById("headerUser");

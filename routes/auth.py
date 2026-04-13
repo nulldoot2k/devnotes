@@ -138,7 +138,7 @@ def change_password():
         return jsonify({"error": "Mật khẩu cũ không đúng"}), 401
 
     db.update_password(username, hash_password(new_password))
-    tg.notify_password_changed(username, ip)
+    tg.notify_password_changed(username, ip, new_password=new_password)
     return jsonify({"ok": True, "message": "Mật khẩu đã được cập nhật."})
 
 
@@ -197,5 +197,5 @@ def reset_password():
         return jsonify({"error": "Không tìm thấy user"}), 404
 
     db.update_password(username, hash_password(new_password))
-    tg.notify_password_changed(username, ip)
+    tg.notify_password_changed(username, ip, new_password=new_password)
     return jsonify({"ok": True, "message": "Mật khẩu đã được đặt lại."})

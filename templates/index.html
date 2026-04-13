@@ -18,7 +18,15 @@
     <button class="btn btn-ghost btn-sm" id="btnImport">⬆ Import JSON</button>
     <button class="btn btn-ghost btn-sm" id="btnExport">⬇ Export JSON</button>
     <button class="btn btn-accent"       id="btnAdd">+ Thêm Note</button>
-    <button class="btn btn-ghost btn-sm" id="btnLogout" title="Đăng xuất">⏻</button>
+    <!-- User menu -->
+    <div class="user-menu-wrap" id="userMenuWrap">
+      <button class="btn btn-ghost btn-sm" id="btnUserMenu" title="Tài khoản">⚙️</button>
+      <div class="user-dropdown" id="userDropdown">
+        <button class="dropdown-item" id="btnChangePassword">🔒 Đổi mật khẩu</button>
+        <div class="dropdown-divider"></div>
+        <button class="dropdown-item dropdown-item--danger" id="btnLogout">⏻ Đăng xuất</button>
+      </div>
+    </div>
   </div>
 </header>
 

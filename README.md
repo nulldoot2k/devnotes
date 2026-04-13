@@ -9,7 +9,14 @@ Dữ liệu lưu vào file `data/notes.json`.
 
 ```bash
 # 1. Cài dependencies
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
+
+# 2. Để hủy
+
+deactivate
+rm -rf venv
 
 # 2. Chạy server
 python app.py

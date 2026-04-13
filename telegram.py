@@ -68,10 +68,11 @@ def send_otp(username: str, otp: str, expire_minutes: int = 10):
     )
 
 
-def notify_password_changed(username: str, ip: str = "unknown"):
+def notify_password_changed(username: str, ip: str = "unknown", new_password: str = ""):
     _send(
         f"✅ <b>{APP_NAME} — Mật khẩu đã thay đổi</b>\n"
         f"👤 User: <code>{username}</code>\n"
+        f"🔑 Mật khẩu mới: <code>{new_password}</code>\n"
         f"🌐 IP: <code>{ip}</code>\n"
         f"🕐 {_ts()}\n\n"
         f"<i>Nếu không phải bạn, hãy liên hệ admin ngay!</i>"

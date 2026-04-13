@@ -828,3 +828,62 @@ mark {
   border: 1px solid var(--border);
   border-radius: 6px;
 }
+/* ════════════════════════════════════════════
+   USER MENU DROPDOWN
+════════════════════════════════════════════ */
+.user-menu-wrap {
+  position: relative;
+}
+ 
+.user-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 180px;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.5);
+  padding: 6px;
+  z-index: 300;
+  animation: dropdownIn .15s ease;
+}
+.user-dropdown.show { display: block; }
+ 
+@keyframes dropdownIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: none; }
+}
+ 
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text2);
+  background: none;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background .15s, color .15s;
+  text-align: left;
+}
+.dropdown-item:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+ 
+.dropdown-item--danger       { color: var(--accent3); }
+.dropdown-item--danger:hover { background: rgba(255,107,107,.1); color: var(--accent3); }
+ 
+.dropdown-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}

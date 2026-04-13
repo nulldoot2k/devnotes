@@ -37,6 +37,7 @@ const App = (() => {
 
     const data = await API.getNotes(params);
     state.notes  = data.notes;
+    state.topics = data.topics;
   }
 
   // ── Render ───────────────────────────────────────────
@@ -293,15 +294,89 @@ const App = (() => {
   //  REFRESH
   // ═══════════════════════════════════════════
   async function refresh() {
-    // Load song song notes + topics để đảm bảo topics luôn đầy đủ
     const [data, topics] = await Promise.all([
       API.getNotes({ q: state.searchQuery }),
       API.getTopics(),
     ]);
     state.notes  = data.notes;
-    state.topics = topics;   // luôn lấy full list topics
+    state.topics = topics;
     renderAll();
   }
+
+  // ═══════════════════════════════════════════
+  //  FULLSCREEN EDITOR
+  // ═══════════════════════════════════════════
+  const FS = (() => {
+    const overlay  = () => document.getElementById("fsEditor");
+    const fsTa     = () => document.getElementById("fsContent");
+    const mainTa   = () => document.getElementById("fContent");
+    const preview  = () => document.getElementById("fsPreview");
+    const titleEl  = () => document.getElementById("fsTitleLabel");
+    let previewTimer = null;
+
+    function updatePreview() {
+      clearTimeout(previewTimer);
+      previewTimer = setTimeout(() => {
+        const html = (typeof marked !== "undefined")
+          ? marked.parse(fsTa().value || "")
+          : fsTa().value.replace(/\n/g, "<br>");
+        preview().innerHTML = html;
+      }, 120);
+    }
+
+    function open() {
+      // Sync nội dung từ textarea chính vào FS
+      fsTa().value = mainTa().value;
+      // Hiển thị tiêu đề note
+      const q = document.getElementById("fQuestion").value.trim();
+      titleEl().textContent = q ? "✏️ " + q : "✏️ Editor";
+      overlay().classList.add("show");
+      updatePreview();
+      setTimeout(() => {
+        const ta = fsTa();
+        ta.focus();
+        ta.setSelectionRange(ta.value.length, ta.value.length);
+      }, 60);
+    }
+
+    function close() {
+      // Sync nội dung ngược lại vào textarea chính
+      mainTa().value = fsTa().value;
+      overlay().classList.remove("show");
+    }
+
+    function init() {
+      // Nút expand trong toolbar
+      document.getElementById("btnMdExpand").addEventListener("click", open);
+
+      // Nút thu nhỏ trong FS header
+      document.getElementById("fsBtnClose").addEventListener("click", close);
+
+      // Nút lưu trong FS header — gọi saveNote() của App
+      document.getElementById("fsBtnSave").addEventListener("click", async () => {
+        close();
+        // Đợi sync xong rồi save
+        setTimeout(() => document.getElementById("btnSaveNote").click(), 50);
+      });
+
+      // Live preview khi gõ
+      fsTa().addEventListener("input", updatePreview);
+
+      // Phím tắt trong FS: Escape = thu nhỏ, Tab = indent
+      fsTa().addEventListener("keydown", e => {
+        if (e.key === "Escape") { e.preventDefault(); close(); }
+        if (e.key === "Tab") {
+          e.preventDefault();
+          const ta = fsTa();
+          const s = ta.selectionStart, end = ta.selectionEnd;
+          ta.setRangeText("  ", s, end, "end");
+          updatePreview();
+        }
+      });
+    }
+
+    return { init, open, close };
+  })();
 
   // ═══════════════════════════════════════════
   //  EVENT WIRING
@@ -426,6 +501,10 @@ const App = (() => {
     // Keyboard shortcuts
     document.addEventListener("keydown", e => {
       if (e.key === "Escape") {
+        // Nếu FS đang mở → thu nhỏ, không đóng modal bên dưới
+        if (document.getElementById("fsEditor").classList.contains("show")) {
+          FS.close(); return;
+        }
         document.querySelectorAll(".modal-overlay.show")
           .forEach(m => m.classList.remove("show"));
       }
@@ -434,11 +513,23 @@ const App = (() => {
         const inp = document.getElementById("searchInput");
         inp.focus(); inp.select();
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === "n") {
+      if (e.altKey && e.key === "n") {
         e.preventDefault();
         openAddModal();
       }
+      // F11 → toggle fullscreen editor (khi modal note đang mở)
+      if (e.key === "F11") {
+        const modalOpen = document.getElementById("modalNote").classList.contains("show");
+        const fsOpen    = document.getElementById("fsEditor").classList.contains("show");
+        if (modalOpen || fsOpen) {
+          e.preventDefault();
+          fsOpen ? FS.close() : FS.open();
+        }
+      }
     });
+
+    // Init fullscreen editor
+    FS.init();
   }
 
   // ═══════════════════════════════════════════

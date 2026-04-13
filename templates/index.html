@@ -18,15 +18,7 @@
     <button class="btn btn-ghost btn-sm" id="btnImport">⬆ Import JSON</button>
     <button class="btn btn-ghost btn-sm" id="btnExport">⬇ Export JSON</button>
     <button class="btn btn-accent"       id="btnAdd">+ Thêm Note</button>
-    <!-- User menu -->
-    <div class="user-menu-wrap" id="userMenuWrap">
-      <button class="btn btn-ghost btn-sm" id="btnUserMenu" title="Tài khoản">⚙️</button>
-      <div class="user-dropdown" id="userDropdown">
-        <a href="/forgot-password" class="dropdown-item">🔒 Đổi mật khẩu</a>
-        <div class="dropdown-divider"></div>
-        <button class="dropdown-item dropdown-item--danger" id="btnLogout">⏻ Đăng xuất</button>
-      </div>
-    </div>
+    <button class="btn btn-ghost btn-sm" id="btnLogout" title="Đăng xuất">⏻</button>
   </div>
 </header>
 
@@ -80,7 +72,7 @@
   <main>
     <div class="main-toolbar">
       <div class="toolbar-left">
-        <div class="view-title"    id="viewTitle">Tất cả Notes</div>
+        <div class="view-title"  id="viewTitle">Tất cả Notes</div>
         <div class="view-subtitle" id="viewSubtitle"></div>
       </div>
       <div class="toolbar-right">
@@ -132,19 +124,20 @@
       <div class="form-group">
         <label class="form-label">Nội dung / Câu trả lời *</label>
         <div class="md-toolbar">
-          <button type="button" class="md-btn" data-md="bold"       title="Bold"><b>B</b></button>
-          <button type="button" class="md-btn" data-md="italic"     title="Italic"><i>I</i></button>
-          <button type="button" class="md-btn" data-md="code"       title="Inline code">`c`</button>
-          <button type="button" class="md-btn" data-md="codeblock"  title="Code block">```</button>
+          <button type="button" class="md-btn" data-md="bold" title="Bold"><b>B</b></button>
+          <button type="button" class="md-btn" data-md="italic" title="Italic"><i>I</i></button>
+          <button type="button" class="md-btn" data-md="code" title="Inline code">`c`</button>
+          <button type="button" class="md-btn" data-md="codeblock" title="Code block">```</button>
           <div class="md-sep"></div>
-          <button type="button" class="md-btn" data-md="h2"         title="Heading 2">H2</button>
-          <button type="button" class="md-btn" data-md="h3"         title="Heading 3">H3</button>
+          <button type="button" class="md-btn" data-md="h2" title="Heading 2">H2</button>
+          <button type="button" class="md-btn" data-md="h3" title="Heading 3">H3</button>
           <div class="md-sep"></div>
-          <button type="button" class="md-btn" data-md="ul"         title="Bullet list">• list</button>
-          <button type="button" class="md-btn" data-md="ol"         title="Numbered list">1. list</button>
+          <button type="button" class="md-btn" data-md="ul" title="Bullet list">• list</button>
+          <button type="button" class="md-btn" data-md="ol" title="Numbered list">1. list</button>
           <button type="button" class="md-btn" data-md="blockquote" title="Blockquote">❝</button>
           <div class="md-sep"></div>
           <button type="button" class="md-btn md-btn--preview" id="btnMdPreview">👁 Preview</button>
+          <button type="button" class="md-btn md-btn--expand"  id="btnMdExpand" title="Mở rộng editor (F11)">⛶</button>
         </div>
         <textarea class="form-textarea" id="fContent"
                   placeholder="Hỗ trợ Markdown: **bold**, `code`, ## heading, - list…"></textarea>
@@ -157,6 +150,91 @@
     </div>
   </div>
 </div>
+
+<!-- ══════════════════════════════════════════
+     Fullscreen Markdown Editor
+══════════════════════════════════════════ -->
+<div class="fs-overlay" id="fsEditor">
+  <div class="fs-header">
+    <div class="fs-title" id="fsTitleLabel">✏️ Editor</div>
+    <div class="fs-actions">
+      <button class="btn btn-accent btn-sm" id="fsBtnSave">💾 Lưu Note</button>
+      <button class="btn btn-ghost  btn-sm" id="fsBtnClose">⊠ Thu nhỏ</button>
+    </div>
+  </div>
+  <div class="fs-body">
+    <div class="fs-pane">
+      <div class="fs-pane-label">MARKDOWN</div>
+      <textarea id="fsContent" spellcheck="false"
+                placeholder="Viết Markdown ở đây…"></textarea>
+    </div>
+    <div class="fs-divider"></div>
+    <div class="fs-pane">
+      <div class="fs-pane-label">PREVIEW</div>
+      <div class="fs-preview md-rendered" id="fsPreview"></div>
+    </div>
+  </div>
+</div>
+
+<style>
+/* ── Nút expand ─────────────────────────────── */
+.md-btn--expand { margin-left: auto; font-size: 16px; opacity: .65; }
+.md-btn--expand:hover { opacity: 1; color: var(--accent); }
+
+/* ── Fullscreen overlay ─────────────────────── */
+.fs-overlay {
+  display: none; position: fixed; inset: 0; z-index: 9999;
+  flex-direction: column;
+  background: var(--bg, #0f1117);
+}
+.fs-overlay.show { display: flex; }
+
+.fs-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 18px; flex-shrink: 0;
+  background: var(--surface); border-bottom: 1px solid var(--border2);
+  gap: 12px;
+}
+.fs-title {
+  font-size: 14px; font-weight: 700;
+  color: var(--accent); font-family: var(--mono);
+}
+.fs-actions { display: flex; gap: 8px; }
+
+.fs-body {
+  display: flex; flex: 1; overflow: hidden; min-height: 0;
+}
+
+.fs-pane {
+  flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden;
+}
+.fs-pane-label {
+  padding: 6px 16px; font-size: 10px; font-weight: 700; letter-spacing: .12em;
+  color: var(--text3); font-family: var(--mono);
+  background: var(--surface2); border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* Editor textarea */
+.fs-pane textarea {
+  flex: 1; width: 100%; border: none; outline: none; resize: none;
+  background: var(--bg, #0f1117); color: var(--text);
+  font-family: var(--mono); font-size: 14px; line-height: 1.7;
+  padding: 20px 24px; tab-size: 2;
+}
+
+/* Preview pane */
+.fs-preview {
+  flex: 1; overflow-y: auto; padding: 20px 32px;
+  background: var(--surface);
+  font-size: 14.5px; line-height: 1.8; color: var(--text2);
+}
+
+/* Divider */
+.fs-divider {
+  width: 3px; background: var(--border2); flex-shrink: 0;
+}
+</style>
 
 <!-- ══════════════════════════════════════════
      Modal: Chi tiết Note
@@ -210,7 +288,7 @@
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-ghost"  data-close="modalImport">Hủy</button>
+      <button class="btn btn-ghost" data-close="modalImport">Hủy</button>
       <button class="btn btn-accent" id="btnDoImport">⬆ Import</button>
     </div>
   </div>
@@ -220,68 +298,20 @@
 <div id="toastContainer"></div>
 
 <script>
-  // ── Auth guard: verify token với server trước khi render ─────────
-  (async function authGuard() {
+  // Auth guard: redirect nếu chưa có token
+  (function() {
     const token = localStorage.getItem("dn_token");
-    if (!token) {
-      window.location.href = "/login";
-      return;
-    }
-    try {
-      const res = await fetch("/api/auth/me", {
-        headers: { "Authorization": `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error("invalid");
-      const user = await res.json();
-      localStorage.setItem("dn_user", user.username);
+    if (!token) window.location.href = "/login";
+    else {
+      const user = localStorage.getItem("dn_user") || "";
+      const el = document.getElementById ? null : null; // wait for DOM
       window.addEventListener("DOMContentLoaded", () => {
         const el = document.getElementById("headerUser");
-        if (el) el.textContent = "👤 " + user.username;
+        if (el) el.textContent = "👤 " + user;
       });
-    } catch {
-      localStorage.removeItem("dn_token");
-      localStorage.removeItem("dn_user");
-      window.location.href = "/login";
     }
   })();
-
-  // ── User dropdown menu ─────────────────────────────────────────
-  window.addEventListener("DOMContentLoaded", () => {
-    const wrap   = document.getElementById("userMenuWrap");
-    const toggle = document.getElementById("btnUserMenu");
-    const drop   = document.getElementById("userDropdown");
-
-    toggle.addEventListener("click", e => {
-      e.stopPropagation();
-      drop.classList.toggle("show");
-    });
-    document.addEventListener("click", () => drop.classList.remove("show"));
-    drop.addEventListener("click", e => e.stopPropagation());
-  });
 </script>
-
-<style>
-  /* User dropdown */
-  .user-menu-wrap { position: relative; }
-  .user-dropdown {
-    display: none; position: absolute; right: 0; top: calc(100% + 8px);
-    background: var(--surface); border: 1px solid var(--border2);
-    border-radius: 10px; padding: 6px; min-width: 180px;
-    box-shadow: 0 8px 30px rgba(0,0,0,.4); z-index: 200;
-  }
-  .user-dropdown.show { display: block; }
-  .dropdown-item {
-    display: block; width: 100%; background: none; border: none;
-    border-radius: 7px; color: var(--text2); cursor: pointer;
-    font-family: var(--sans); font-size: 13px;
-    padding: 9px 12px; text-align: left; text-decoration: none;
-    transition: background .15s;
-  }
-  .dropdown-item:hover { background: var(--surface2); color: var(--text); }
-  .dropdown-item--danger:hover { background: rgba(255,107,107,.1); color: var(--accent3); }
-  .dropdown-divider { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
-</style>
-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
 <script src="/static/js/api.js"></script>
 <script src="/static/js/ui.js"></script>

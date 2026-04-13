@@ -120,6 +120,31 @@ const App = (() => {
   }
 
   // ═══════════════════════════════════════════
+  //  UNSAVED CHANGES GUARD
+  // ═══════════════════════════════════════════
+
+  // Lưu nội dung gốc khi mở modal để so sánh khi đóng
+  let _savedQuestion = "";
+  let _savedContent  = "";
+
+  function markSaved() {
+    _savedQuestion = document.getElementById("fQuestion").value;
+    _savedContent  = document.getElementById("fContent").value;
+  }
+
+  function hasUnsavedChanges() {
+    const q = document.getElementById("fQuestion").value;
+    const c = document.getElementById("fContent").value;
+    // Có thay đổi so với lúc mở, HOẶC có nội dung mới (modal thêm mới)
+    return q !== _savedQuestion || c !== _savedContent;
+  }
+
+  function confirmClose() {
+    if (!hasUnsavedChanges()) return true;
+    return confirm("Bạn có nội dung chưa lưu. Thoát không?");
+  }
+
+  // ═══════════════════════════════════════════
   //  NOTE FORM
   // ═══════════════════════════════════════════
   let editingId = null;
@@ -127,14 +152,17 @@ const App = (() => {
   function openAddModal() {
     editingId = null;
     document.getElementById("modalNoteTitle").textContent = "✏️ Thêm Note Mới";
-    document.getElementById("fNoteId").value  = "";
+    document.getElementById("fNoteId").value   = "";
     document.getElementById("fQuestion").value = "";
     document.getElementById("fContent").value  = "";
     document.getElementById("fTags").value     = "";
     populateTopicSelect(state.filterTopic);
     UI.openModal("modalNote");
     MD.initToolbar();
-    setTimeout(() => document.getElementById("fQuestion").focus(), 80);
+    setTimeout(() => {
+      markSaved(); // snapshot trạng thái rỗng
+      document.getElementById("fQuestion").focus();
+    }, 80);
   }
 
   function openEditModal(id) {
@@ -155,6 +183,7 @@ const App = (() => {
     const ta   = document.getElementById('fContent');
     const pb   = document.getElementById('btnMdPreview');
     if (prev) { prev.style.display='none'; ta.style.display='block'; pb.textContent='👁 Preview'; pb.classList.remove('active'); }
+    markSaved(); // snapshot nội dung gốc
   }
 
   async function saveNote() {
@@ -181,6 +210,7 @@ const App = (() => {
         await API.createNote(payload);
         UI.toast("✅ Đã thêm note mới!");
       }
+      markSaved(); // reset guard sau khi lưu thành công
       UI.closeModal("modalNote");
       await refresh();
     } catch (err) {
@@ -370,22 +400,26 @@ const App = (() => {
       // Nút expand trong toolbar
       document.getElementById("btnMdExpand").addEventListener("click", open);
 
-      // Nút thu nhỏ trong FS header
+      // Nút thu nhỏ trong FS header — chỉ thu nhỏ, không hỏi gì
       document.getElementById("fsBtnClose").addEventListener("click", close);
 
       // Nút lưu trong FS header — gọi saveNote() của App
       document.getElementById("fsBtnSave").addEventListener("click", async () => {
         close();
-        // Đợi sync xong rồi save
         setTimeout(() => document.getElementById("btnSaveNote").click(), 50);
       });
 
       // Live preview khi gõ
       fsTa().addEventListener("input", updatePreview);
 
-      // Phím tắt trong FS: Escape = thu nhỏ, Tab = indent
+      // Phím tắt trong FS: Escape = thu nhỏ (KHÔNG thoát), Tab = indent
       fsTa().addEventListener("keydown", e => {
-        if (e.key === "Escape") { e.preventDefault(); close(); }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation(); // chặn bubble lên global handler
+          close();             // chỉ thu nhỏ về modal, không đóng modal
+          return;
+        }
         if (e.key === "Tab") {
           e.preventDefault();
           const ta = fsTa();
@@ -403,205 +437,109 @@ const App = (() => {
   //  PDF EXPORT
   // ═══════════════════════════════════════════
 
-  /**
-   * Render markdown to clean text with structure for PDF
-   * jsPDF doesn't support HTML directly, so we convert MD → structured lines
-   */
-  function mdToLines(md, doc, maxWidth) {
-    const lines = [];
-    const rawLines = md.split('\n');
-    let inCodeBlock = false;
-    for (const line of rawLines) {
-      if (line.startsWith('```')) {
-        inCodeBlock = !inCodeBlock;
-        if (inCodeBlock) lines.push({ text: '', style: 'spacer' });
-        continue;
-      }
-      if (inCodeBlock) {
-        lines.push({ text: '    ' + line, style: 'code' });
-        continue;
-      }
-      if (line.startsWith('### ')) {
-        lines.push({ text: line.slice(4), style: 'h3' });
-      } else if (line.startsWith('## ')) {
-        lines.push({ text: line.slice(3), style: 'h2' });
-      } else if (line.startsWith('# ')) {
-        lines.push({ text: line.slice(2), style: 'h1' });
-      } else if (line.startsWith('> ')) {
-        lines.push({ text: '  ' + line.slice(2), style: 'quote' });
-      } else if (line.startsWith('- ') || line.startsWith('* ')) {
-        lines.push({ text: '  • ' + line.slice(2), style: 'body' });
-      } else if (/^\d+\. /.test(line)) {
-        lines.push({ text: '  ' + line, style: 'body' });
-      } else if (line.trim() === '') {
-        lines.push({ text: '', style: 'spacer' });
-      } else {
-        const clean = line
-          .replace(/\*\*(.*?)\*\*/g, '$1')
-          .replace(/\*(.*?)\*/g, '$1')
-          .replace(/`(.*?)`/g, '$1')
-          .replace(/\[(.*?)\]\(.*?\)/g, '$1');
-        lines.push({ text: clean, style: 'body' });
-      }
-    }
-    return lines;
+  function buildPdfHtml(notes, topics) {
+    const topicById = id => topics.find(t => String(t.id) === String(id));
+    return notes.map((note, idx) => {
+      const topic = topicById(note.topic);
+      const tags  = (note.tags || []).map(t => `<span class="pdf-tag">${t}</span>`).join('');
+      const topicBadge = topic
+        ? `<div class="pdf-topic" style="color:${topic.color}">[${topic.name}]</div>` : '';
+      const bodyHtml = (typeof marked !== 'undefined')
+        ? marked.parse(note.content)
+        : note.content.replace(/\n/g, '<br>');
+      const separator = idx > 0 ? '<div class="pdf-sep"></div>' : '';
+      return `
+        ${separator}
+        <div class="pdf-note">
+          ${topicBadge}
+          <div class="pdf-question">${note.question}</div>
+          <div class="pdf-divider"></div>
+          <div class="pdf-body md-rendered">${bodyHtml}</div>
+          ${tags ? `<div class="pdf-tags">${tags}</div>` : ''}
+        </div>`;
+    }).join('');
   }
 
-  function renderNoteToPdf(doc, note, topics, startY, pageW, pageH, margin) {
-    const usableW = pageW - margin * 2;
-    let y = startY;
+  async function buildPdf(notes, topics, filename) {
+    if (!notes.length) { UI.toast('⚠️ Không có note nào để export'); return; }
+    UI.toast('⏳ Đang tạo PDF…');
 
-    const checkPage = (needed = 10) => {
-      if (y + needed > pageH - margin) {
-        doc.addPage();
-        y = margin;
+    const container = document.createElement('div');
+    container.id = 'pdfContainer';
+    container.innerHTML = `
+      <div class="pdf-header">
+        <span class="pdf-logo">dev/notes</span>
+        <span class="pdf-meta">${notes.length} notes · ${new Date().toLocaleDateString('vi-VN')}</span>
+      </div>
+      <div class="pdf-content">${buildPdfHtml(notes, topics)}</div>`;
+
+    const style = document.createElement('style');
+    style.textContent = `
+      #pdfContainer {
+        position: fixed; left: -9999px; top: 0;
+        width: 794px; background: #fff;
+        font-family: 'Sora', sans-serif;
+        color: #1a1a2e; font-size: 13px; line-height: 1.7;
       }
-    };
+      .pdf-header {
+        background: #0d0f14; padding: 14px 28px;
+        display: flex; justify-content: space-between; align-items: center;
+      }
+      .pdf-logo { color: #4fffb0; font-weight: 700; font-size: 15px; }
+      .pdf-meta { color: #8892a4; font-size: 11px; }
+      .pdf-content { padding: 28px 36px; }
+      .pdf-note { margin-bottom: 8px; }
+      .pdf-sep { border-top: 1.5px dashed #cbd5e1; margin: 24px 0; }
+      .pdf-topic { font-size: 10px; color: #64748b; margin-bottom: 4px; font-weight: 600; }
+      .pdf-question { font-size: 16px; font-weight: 700; color: #0f172a; margin-bottom: 8px; }
+      .pdf-divider { border-top: 1px solid #e2e8f0; margin-bottom: 12px; }
+      .pdf-body { font-size: 12.5px; color: #334155; }
+      .pdf-body h1 { font-size: 15px; font-weight: 700; margin: 14px 0 6px; color: #0f172a; }
+      .pdf-body h2 { font-size: 13px; font-weight: 700; margin: 12px 0 5px; color: #0369a1; }
+      .pdf-body h3 { font-size: 12px; font-weight: 700; margin: 10px 0 4px; color: #0284c7; }
+      .pdf-body p  { margin: 0 0 8px; }
+      .pdf-body ul, .pdf-body ol { padding-left: 20px; margin: 4px 0 10px; }
+      .pdf-body li { margin: 3px 0; }
+      .pdf-body code { background: #f1f5f9; color: #0f766e; padding: 1px 5px; border-radius: 3px; font-size: 11px; font-family: monospace; }
+      .pdf-body pre { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; overflow: hidden; margin: 8px 0; }
+      .pdf-body pre code { background: none; color: #334155; font-size: 11px; }
+      .pdf-body blockquote { border-left: 3px solid #0ea5e9; margin: 8px 0; padding: 4px 12px; background: #f0f9ff; color: #475569; }
+      .pdf-body strong { color: #0f172a; font-weight: 700; }
+      .pdf-tags { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+      .pdf-tag { background: #f1f5f9; color: #64748b; font-size: 10px; padding: 2px 8px; border-radius: 10px; }
+    `;
 
-    // Topic badge
-    const topic = topics.find(t => String(t.id) === String(note.topic));
-    if (topic) {
-      doc.setFontSize(9);
-      doc.setTextColor(120, 120, 140);
-      doc.text('[' + topic.name + ']', margin, y);
-      y += 6;
+    document.head.appendChild(style);
+    document.body.appendChild(container);
+
+    try {
+      const { jsPDF } = window.jspdf;
+      const pdf  = new jsPDF({ unit: 'pt', format: 'a4' });
+      const pdfW = pdf.internal.pageSize.getWidth();
+      const pdfH = pdf.internal.pageSize.getHeight();
+
+      const canvas = await html2canvas(container, {
+        scale: 2, useCORS: true, backgroundColor: '#ffffff',
+        width: 794, windowWidth: 794,
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.92);
+      const imgW    = pdfW;
+      const imgH    = (canvas.height * pdfW) / canvas.width;
+      let   posY    = 0;
+
+      while (posY < imgH) {
+        if (posY > 0) pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, -posY, imgW, imgH);
+        posY += pdfH;
+      }
+
+      pdf.save(filename);
+      UI.toast(`✅ Đã export ${notes.length} notes ra PDF!`);
+    } finally {
+      document.body.removeChild(container);
+      document.head.removeChild(style);
     }
-
-    // Question (title)
-    checkPage(14);
-    doc.setFontSize(14);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(20, 20, 30);
-    const qLines = doc.splitTextToSize(note.question, usableW);
-    qLines.forEach(l => {
-      checkPage(8);
-      doc.text(l, margin, y);
-      y += 7;
-    });
-    y += 3;
-
-    // Divider
-    doc.setDrawColor(220, 220, 230);
-    doc.line(margin, y, pageW - margin, y);
-    y += 6;
-
-    // Content lines
-    const contentLines = mdToLines(note.content, doc, usableW);
-    for (const line of contentLines) {
-      if (line.style === 'spacer') {
-        y += 3;
-        continue;
-      }
-
-      checkPage(8);
-
-      if (line.style === 'h1') {
-        doc.setFontSize(13);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(30, 30, 50);
-      } else if (line.style === 'h2') {
-        doc.setFontSize(12);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(50, 120, 100);
-      } else if (line.style === 'h3') {
-        doc.setFontSize(11);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(30, 100, 160);
-      } else if (line.style === 'quote') {
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'italic');
-        doc.setTextColor(100, 100, 120);
-        doc.setDrawColor(180, 200, 220);
-        doc.line(margin + 2, y - 4, margin + 2, y + 2);
-      } else if (line.style === 'code') {
-        doc.setFontSize(9);
-        doc.setFont('courier', 'normal');
-        doc.setTextColor(80, 180, 120);
-      } else {
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(50, 50, 70);
-      }
-
-      const wrapped = doc.splitTextToSize(line.text || ' ', usableW - (line.style === 'quote' ? 8 : 0));
-      const xOffset = line.style === 'quote' ? margin + 6 : margin;
-      for (const wl of wrapped) {
-        checkPage(6);
-        doc.text(wl, xOffset, y);
-        y += 5.5;
-      }
-    }
-
-    // Tags
-    if (note.tags && note.tags.length) {
-      y += 4;
-      checkPage(8);
-      doc.setFontSize(8.5);
-      doc.setFont('helvetica', 'italic');
-      doc.setTextColor(140, 140, 160);
-      doc.text('Tags: ' + note.tags.join(', '), margin, y);
-      y += 5;
-    }
-
-    return y;
-  }
-
-  function buildPdf(notes, topics, filename) {
-    if (!notes.length) { UI.toast("⚠️ Không có note nào để export"); return; }
-
-    const { jsPDF } = window.jspdf;
-    const doc    = new jsPDF({ unit: 'mm', format: 'a4' });
-    doc.setFont('Roboto-Regular', 'normal');
-    const pageW  = doc.internal.pageSize.getWidth();
-    const pageH  = doc.internal.pageSize.getHeight();
-    const margin = 18;
-
-    // Cover / header
-    doc.setFillColor(13, 15, 20);
-    doc.rect(0, 0, pageW, 22, 'F');
-    doc.setFontSize(13);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(79, 255, 176);
-    doc.text('dev/notes', margin, 14);
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(140, 150, 170);
-    doc.text(`${notes.length} notes · ${new Date().toLocaleDateString('vi-VN')}`, pageW - margin, 14, { align: 'right' });
-
-    let y = 34;
-
-    notes.forEach((note, idx) => {
-      if (idx > 0) {
-        // Separator between notes
-        // Separator between notes
-        if (y + 18 > pageH - margin) {
-          doc.addPage();
-          y = margin;
-        } else {
-          y += 6;
-          doc.setDrawColor(200, 210, 225);
-          doc.setLineDash([2, 2]);
-          doc.line(margin, y, pageW - margin, y);
-          doc.setLineDash([]);
-          y += 8;
-        }
-      }
-      y = renderNoteToPdf(doc, note, topics, y, pageW, pageH, margin);
-      y += 4;
-    });
-
-    // Page numbers
-    const total = doc.internal.getNumberOfPages();
-    for (let i = 1; i <= total; i++) {
-      doc.setPage(i);
-      doc.setFontSize(8);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(160, 160, 180);
-      doc.text(`${i} / ${total}`, pageW / 2, pageH - 8, { align: 'center' });
-    }
-
-    doc.save(filename);
-    UI.toast(`✅ Đã export ${notes.length} notes ra PDF!`);
   }
 
   function exportSingleNotePdf(note) {
@@ -609,7 +547,6 @@ const App = (() => {
   }
 
   function openExportPdfModal() {
-    // Populate topic select
     const sel = document.getElementById("exportTopicSelect");
     sel.innerHTML = '<option value="">— Chọn chủ đề —</option>';
     state.topics.forEach(t => {
@@ -619,7 +556,6 @@ const App = (() => {
       sel.appendChild(opt);
     });
 
-    // Reset to "all"
     document.querySelector('[name="exportScope"][value="all"]').checked = true;
     document.getElementById("exportTopicGroup").style.display = "none";
     document.getElementById("exportNoteCount").textContent = state.notes.length;
@@ -630,7 +566,6 @@ const App = (() => {
   function wireExportPdfModal() {
     document.getElementById("btnExportPdf").addEventListener("click", openExportPdfModal);
 
-    // Scope radio change
     document.querySelectorAll('[name="exportScope"]').forEach(radio => {
       radio.addEventListener("change", () => {
         const isAll = radio.value === "all";
@@ -642,7 +577,6 @@ const App = (() => {
       });
     });
 
-    // Topic select change
     document.getElementById("exportTopicSelect").addEventListener("change", () => {
       const topicId = document.getElementById("exportTopicSelect").value;
       const count = topicId
@@ -651,7 +585,6 @@ const App = (() => {
       document.getElementById("exportNoteCount").textContent = count;
     });
 
-    // Do export
     document.getElementById("btnDoExportPdf").addEventListener("click", () => {
       const scope = document.querySelector('[name="exportScope"]:checked').value;
       let notes, filename;
@@ -679,7 +612,7 @@ const App = (() => {
     // Header buttons
     document.getElementById("btnAdd").addEventListener("click", openAddModal);
 
-    // Change password → navigate to forgot page (tab "change")
+    // Change password
     const changePwBtn = document.getElementById("btnChangePassword");
     if (changePwBtn) changePwBtn.addEventListener("click", () => {
       window.location.href = "/forgot-password";
@@ -699,9 +632,7 @@ const App = (() => {
         e.stopPropagation();
         userDropdown.classList.toggle("show");
       });
-      // Đóng khi click ra ngoài
       document.addEventListener("click", () => userDropdown.classList.remove("show"));
-      // Giữ mở khi click bên trong dropdown
       userDropdown.addEventListener("click", e => e.stopPropagation());
     }
 
@@ -815,16 +746,43 @@ const App = (() => {
       }
     });
 
+    // ── Nút X và Hủy trên modal Note → hỏi xác nhận nếu có thay đổi ──
+    document.querySelectorAll('[data-close="modalNote"]').forEach(btn => {
+      btn.addEventListener("click", e => {
+        if (!confirmClose()) {
+          e.stopImmediatePropagation();
+          e.preventDefault();
+        }
+        // Nếu cho phép đóng, reset guard
+        else {
+          markSaved();
+        }
+      }, true); // capture để chạy trước handler gốc của UI
+    });
+
     // Keyboard shortcuts
     document.addEventListener("keydown", e => {
       if (e.key === "Escape") {
-        // Nếu FS đang mở → thu nhỏ, không đóng modal bên dưới
+        // FS đang mở → chỉ thu nhỏ, Esc đã được xử lý trong fsTa keydown
+        // (stopPropagation ở đó), nhưng giữ thêm guard ở đây cho chắc
         if (document.getElementById("fsEditor").classList.contains("show")) {
           FS.close(); return;
         }
+
+        // Modal Note đang mở → hỏi xác nhận nếu có nội dung chưa lưu
+        const modalNote = document.getElementById("modalNote");
+        if (modalNote.classList.contains("show")) {
+          if (!confirmClose()) return; // chặn đóng
+          markSaved();
+          modalNote.classList.remove("show");
+          return;
+        }
+
+        // Các modal khác → đóng bình thường
         document.querySelectorAll(".modal-overlay.show")
           .forEach(m => m.classList.remove("show"));
       }
+
       if ((e.ctrlKey || e.metaKey) && e.key === "k") {
         e.preventDefault();
         const inp = document.getElementById("searchInput");

@@ -17,6 +17,7 @@
     <span class="header-user" id="headerUser"></span>
     <button class="btn btn-ghost btn-sm" id="btnImport">⬆ Import JSON</button>
     <button class="btn btn-ghost btn-sm" id="btnExport">⬇ Export JSON</button>
+    <button class="btn btn-ghost btn-sm" id="btnExportPdf">📄 Export PDF</button>
     <button class="btn btn-accent"       id="btnAdd">+ Thêm Note</button>
     <!-- User menu -->
     <div class="user-menu-wrap" id="userMenuWrap">
@@ -260,6 +261,8 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-danger btn-sm" id="detailDeleteBtn">🗑 Xóa</button>
+      <button class="btn btn-ghost btn-sm"  id="detailCopyBtn" title="Sao chép nội dung Markdown">📋 Copy MD</button>
+      <button class="btn btn-ghost btn-sm"  id="detailExportPdfBtn" title="Xuất note này ra PDF">⬇ PDF</button>
       <button class="btn btn-ghost"         data-close="modalDetail">Đóng</button>
       <button class="btn btn-accent"        id="detailEditBtn">✏️ Chỉnh sửa</button>
     </div>
@@ -302,6 +305,46 @@
   </div>
 </div>
 
+<!-- ══════════════════════════════════════════
+     Modal: Export PDF
+══════════════════════════════════════════ -->
+<div class="modal-overlay" id="modalExportPdf">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">📄 Export PDF</div>
+      <button class="close-btn" data-close="modalExportPdf">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Phạm vi export</label>
+        <div class="export-scope-row">
+          <label class="export-scope-opt">
+            <input type="radio" name="exportScope" value="all" checked> Tất cả notes
+          </label>
+          <label class="export-scope-opt">
+            <input type="radio" name="exportScope" value="topic"> Theo chủ đề
+          </label>
+        </div>
+      </div>
+
+      <div class="form-group" id="exportTopicGroup" style="display:none">
+        <label class="form-label">Chọn chủ đề</label>
+        <select class="form-select" id="exportTopicSelect">
+          <option value="">— Chọn chủ đề —</option>
+        </select>
+      </div>
+
+      <div class="export-preview-info" id="exportPreviewInfo">
+        <span id="exportNoteCount">–</span> notes sẽ được export
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" data-close="modalExportPdf">Hủy</button>
+      <button class="btn btn-accent" id="btnDoExportPdf">📄 Tạo PDF</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast container -->
 <div id="toastContainer"></div>
 
@@ -321,6 +364,8 @@
   })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://unpkg.com/jspdf@2.5.1/dist/fonts/Roboto-Regular-normal.js"></script>
 <script src="/static/js/api.js"></script>
 <script src="/static/js/ui.js"></script>
 <script src="/static/js/app.js"></script>

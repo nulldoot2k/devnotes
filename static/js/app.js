@@ -228,6 +228,27 @@ const App = (() => {
       } catch (err) { UI.toast("❌ " + err.message); }
     };
 
+    // Copy markdown content
+    document.getElementById("detailCopyBtn").onclick = () => {
+      navigator.clipboard.writeText(n.content).then(() => {
+        UI.toast("📋 Đã sao chép nội dung Markdown!");
+      }).catch(() => {
+        // Fallback
+        const ta = document.createElement("textarea");
+        ta.value = n.content;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        UI.toast("📋 Đã sao chép!");
+      });
+    };
+
+    // Export single note as PDF
+    document.getElementById("detailExportPdfBtn").onclick = () => {
+      exportSingleNotePdf(n);
+    };
+
     UI.openModal("modalDetail");
   }
 
@@ -379,6 +400,279 @@ const App = (() => {
   })();
 
   // ═══════════════════════════════════════════
+  //  PDF EXPORT
+  // ═══════════════════════════════════════════
+
+  /**
+   * Render markdown to clean text with structure for PDF
+   * jsPDF doesn't support HTML directly, so we convert MD → structured lines
+   */
+  function mdToLines(md, doc, maxWidth) {
+    const lines = [];
+    const rawLines = md.split('\n');
+    let inCodeBlock = false;
+    for (const line of rawLines) {
+      if (line.startsWith('```')) {
+        inCodeBlock = !inCodeBlock;
+        if (inCodeBlock) lines.push({ text: '', style: 'spacer' });
+        continue;
+      }
+      if (inCodeBlock) {
+        lines.push({ text: '    ' + line, style: 'code' });
+        continue;
+      }
+      if (line.startsWith('### ')) {
+        lines.push({ text: line.slice(4), style: 'h3' });
+      } else if (line.startsWith('## ')) {
+        lines.push({ text: line.slice(3), style: 'h2' });
+      } else if (line.startsWith('# ')) {
+        lines.push({ text: line.slice(2), style: 'h1' });
+      } else if (line.startsWith('> ')) {
+        lines.push({ text: '  ' + line.slice(2), style: 'quote' });
+      } else if (line.startsWith('- ') || line.startsWith('* ')) {
+        lines.push({ text: '  • ' + line.slice(2), style: 'body' });
+      } else if (/^\d+\. /.test(line)) {
+        lines.push({ text: '  ' + line, style: 'body' });
+      } else if (line.trim() === '') {
+        lines.push({ text: '', style: 'spacer' });
+      } else {
+        const clean = line
+          .replace(/\*\*(.*?)\*\*/g, '$1')
+          .replace(/\*(.*?)\*/g, '$1')
+          .replace(/`(.*?)`/g, '$1')
+          .replace(/\[(.*?)\]\(.*?\)/g, '$1');
+        lines.push({ text: clean, style: 'body' });
+      }
+    }
+    return lines;
+  }
+
+  function renderNoteToPdf(doc, note, topics, startY, pageW, pageH, margin) {
+    const usableW = pageW - margin * 2;
+    let y = startY;
+
+    const checkPage = (needed = 10) => {
+      if (y + needed > pageH - margin) {
+        doc.addPage();
+        y = margin;
+      }
+    };
+
+    // Topic badge
+    const topic = topics.find(t => String(t.id) === String(note.topic));
+    if (topic) {
+      doc.setFontSize(9);
+      doc.setTextColor(120, 120, 140);
+      doc.text('[' + topic.name + ']', margin, y);
+      y += 6;
+    }
+
+    // Question (title)
+    checkPage(14);
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(20, 20, 30);
+    const qLines = doc.splitTextToSize(note.question, usableW);
+    qLines.forEach(l => {
+      checkPage(8);
+      doc.text(l, margin, y);
+      y += 7;
+    });
+    y += 3;
+
+    // Divider
+    doc.setDrawColor(220, 220, 230);
+    doc.line(margin, y, pageW - margin, y);
+    y += 6;
+
+    // Content lines
+    const contentLines = mdToLines(note.content, doc, usableW);
+    for (const line of contentLines) {
+      if (line.style === 'spacer') {
+        y += 3;
+        continue;
+      }
+
+      checkPage(8);
+
+      if (line.style === 'h1') {
+        doc.setFontSize(13);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(30, 30, 50);
+      } else if (line.style === 'h2') {
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(50, 120, 100);
+      } else if (line.style === 'h3') {
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(30, 100, 160);
+      } else if (line.style === 'quote') {
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'italic');
+        doc.setTextColor(100, 100, 120);
+        doc.setDrawColor(180, 200, 220);
+        doc.line(margin + 2, y - 4, margin + 2, y + 2);
+      } else if (line.style === 'code') {
+        doc.setFontSize(9);
+        doc.setFont('courier', 'normal');
+        doc.setTextColor(80, 180, 120);
+      } else {
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(50, 50, 70);
+      }
+
+      const wrapped = doc.splitTextToSize(line.text || ' ', usableW - (line.style === 'quote' ? 8 : 0));
+      const xOffset = line.style === 'quote' ? margin + 6 : margin;
+      for (const wl of wrapped) {
+        checkPage(6);
+        doc.text(wl, xOffset, y);
+        y += 5.5;
+      }
+    }
+
+    // Tags
+    if (note.tags && note.tags.length) {
+      y += 4;
+      checkPage(8);
+      doc.setFontSize(8.5);
+      doc.setFont('helvetica', 'italic');
+      doc.setTextColor(140, 140, 160);
+      doc.text('Tags: ' + note.tags.join(', '), margin, y);
+      y += 5;
+    }
+
+    return y;
+  }
+
+  function buildPdf(notes, topics, filename) {
+    if (!notes.length) { UI.toast("⚠️ Không có note nào để export"); return; }
+
+    const { jsPDF } = window.jspdf;
+    const doc    = new jsPDF({ unit: 'mm', format: 'a4' });
+    doc.setFont('Roboto-Regular', 'normal');
+    const pageW  = doc.internal.pageSize.getWidth();
+    const pageH  = doc.internal.pageSize.getHeight();
+    const margin = 18;
+
+    // Cover / header
+    doc.setFillColor(13, 15, 20);
+    doc.rect(0, 0, pageW, 22, 'F');
+    doc.setFontSize(13);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(79, 255, 176);
+    doc.text('dev/notes', margin, 14);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(140, 150, 170);
+    doc.text(`${notes.length} notes · ${new Date().toLocaleDateString('vi-VN')}`, pageW - margin, 14, { align: 'right' });
+
+    let y = 34;
+
+    notes.forEach((note, idx) => {
+      if (idx > 0) {
+        // Separator between notes
+        // Separator between notes
+        if (y + 18 > pageH - margin) {
+          doc.addPage();
+          y = margin;
+        } else {
+          y += 6;
+          doc.setDrawColor(200, 210, 225);
+          doc.setLineDash([2, 2]);
+          doc.line(margin, y, pageW - margin, y);
+          doc.setLineDash([]);
+          y += 8;
+        }
+      }
+      y = renderNoteToPdf(doc, note, topics, y, pageW, pageH, margin);
+      y += 4;
+    });
+
+    // Page numbers
+    const total = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= total; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(160, 160, 180);
+      doc.text(`${i} / ${total}`, pageW / 2, pageH - 8, { align: 'center' });
+    }
+
+    doc.save(filename);
+    UI.toast(`✅ Đã export ${notes.length} notes ra PDF!`);
+  }
+
+  function exportSingleNotePdf(note) {
+    buildPdf([note], state.topics, `devnotes-${note.id}.pdf`);
+  }
+
+  function openExportPdfModal() {
+    // Populate topic select
+    const sel = document.getElementById("exportTopicSelect");
+    sel.innerHTML = '<option value="">— Chọn chủ đề —</option>';
+    state.topics.forEach(t => {
+      const opt = document.createElement("option");
+      opt.value = t.id;
+      opt.textContent = t.name;
+      sel.appendChild(opt);
+    });
+
+    // Reset to "all"
+    document.querySelector('[name="exportScope"][value="all"]').checked = true;
+    document.getElementById("exportTopicGroup").style.display = "none";
+    document.getElementById("exportNoteCount").textContent = state.notes.length;
+
+    UI.openModal("modalExportPdf");
+  }
+
+  function wireExportPdfModal() {
+    document.getElementById("btnExportPdf").addEventListener("click", openExportPdfModal);
+
+    // Scope radio change
+    document.querySelectorAll('[name="exportScope"]').forEach(radio => {
+      radio.addEventListener("change", () => {
+        const isAll = radio.value === "all";
+        document.getElementById("exportTopicGroup").style.display = isAll ? "none" : "block";
+        const count = isAll
+          ? state.notes.length
+          : state.notes.filter(n => String(n.topic) === document.getElementById("exportTopicSelect").value).length;
+        document.getElementById("exportNoteCount").textContent = count;
+      });
+    });
+
+    // Topic select change
+    document.getElementById("exportTopicSelect").addEventListener("change", () => {
+      const topicId = document.getElementById("exportTopicSelect").value;
+      const count = topicId
+        ? state.notes.filter(n => String(n.topic) === topicId).length
+        : 0;
+      document.getElementById("exportNoteCount").textContent = count;
+    });
+
+    // Do export
+    document.getElementById("btnDoExportPdf").addEventListener("click", () => {
+      const scope = document.querySelector('[name="exportScope"]:checked').value;
+      let notes, filename;
+
+      if (scope === "all") {
+        notes    = state.notes;
+        filename = `devnotes-all-${new Date().toISOString().slice(0,10)}.pdf`;
+      } else {
+        const topicId = document.getElementById("exportTopicSelect").value;
+        if (!topicId) { UI.toast("⚠️ Chọn chủ đề để export"); return; }
+        const topic = state.topics.find(t => String(t.id) === topicId);
+        notes    = state.notes.filter(n => String(n.topic) === topicId);
+        filename = `devnotes-${(topic?.name || topicId).replace(/\s+/g,'-')}-${new Date().toISOString().slice(0,10)}.pdf`;
+      }
+
+      UI.closeModal("modalExportPdf");
+      setTimeout(() => buildPdf(notes, state.topics, filename), 100);
+    });
+  }
+
+  // ═══════════════════════════════════════════
   //  EVENT WIRING
   // ═══════════════════════════════════════════
   function wireEvents() {
@@ -419,6 +713,9 @@ const App = (() => {
       document.getElementById("pasteJson").value = "";
       UI.openModal("modalImport");
     });
+
+    // Export PDF modal
+    wireExportPdfModal();
 
     // Save note
     document.getElementById("btnSaveNote").addEventListener("click", saveNote);

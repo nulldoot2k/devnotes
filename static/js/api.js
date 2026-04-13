@@ -1,5 +1,5 @@
 /**
- * api.js — Tất cả các lời gọi tới Flask backend
+ * api.js — Tất cả lời gọi tới Flask backend
  * Tự động đính kèm JWT token từ localStorage vào mọi request.
  */
 
@@ -19,7 +19,7 @@ const API = (() => {
 
     const res = await fetch(path, opts);
 
-    // Token hết hạn / chưa login → redirect về login
+    // Token hết hạn / chưa login → redirect
     if (res.status === 401) {
       localStorage.removeItem("dn_token");
       localStorage.removeItem("dn_user");
@@ -27,12 +27,8 @@ const API = (() => {
       return;
     }
 
-    // ── Safe JSON parse ──────────────────────────────────────────
-    // Không gọi .json() mù quáng — Flask debug page / nginx error đều là HTML
-    // Nếu không phải JSON → đọc text để hiện error rõ ràng
     const contentType = res.headers.get("Content-Type") || "";
     let data = null;
-
     if (contentType.includes("application/json")) {
       data = await res.json();
     } else if (res.status !== 204) {
@@ -46,10 +42,10 @@ const API = (() => {
   }
 
   return {
-    // ── Auth ───────────────────────────────────────────────────
+    // ── Auth ─────────────────────────────────────────────────
     logout() {
       return fetch("/api/auth/logout", {
-        method:  "POST",
+        method: "POST",
         headers: { "Authorization": `Bearer ${getToken()}` },
       }).finally(() => {
         localStorage.removeItem("dn_token");
@@ -62,10 +58,20 @@ const API = (() => {
       return request("GET", "/api/auth/me");
     },
 
-    // ── Notes ──────────────────────────────────────────────────
+    /**
+     * Đổi mật khẩu — cần đăng nhập, cần mật khẩu cũ
+     */
+    changePassword(oldPassword, newPassword) {
+      return request("POST", "/api/auth/change-password", {
+        old_password: oldPassword,
+        new_password: newPassword,
+      });
+    },
+
+    // ── Notes ────────────────────────────────────────────────
     getNotes(params = {}) {
       const qs = new URLSearchParams();
-      if (params.q)     qs.set("q", params.q);
+      if (params.q)     qs.set("q",     params.q);
       if (params.topic) qs.set("topic", params.topic);
       return request("GET", `/api/notes?${qs}`);
     },
@@ -75,14 +81,16 @@ const API = (() => {
     },
 
     updateNote(id, note) {
+      if (!id) throw new Error("updateNote: id is required");
       return request("PUT", `/api/notes/${id}`, note);
     },
 
     deleteNote(id) {
+      if (!id) throw new Error("deleteNote: id is required");
       return request("DELETE", `/api/notes/${id}`);
     },
 
-    // ── Topics ─────────────────────────────────────────────────
+    // ── Topics ───────────────────────────────────────────────
     getTopics() {
       return request("GET", "/api/topics");
     },
@@ -92,10 +100,11 @@ const API = (() => {
     },
 
     deleteTopic(id) {
+      if (!id) throw new Error("deleteTopic: id is required");
       return request("DELETE", `/api/topics/${id}`);
     },
 
-    // ── Import / Export ────────────────────────────────────────
+    // ── Import / Export ───────────────────────────────────────
     exportData() {
       return request("GET", "/api/export");
     },

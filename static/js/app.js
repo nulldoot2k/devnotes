@@ -37,7 +37,6 @@ const App = (() => {
 
     const data = await API.getNotes(params);
     state.notes  = data.notes;
-    state.topics = data.topics;
   }
 
   // ── Render ───────────────────────────────────────────
@@ -294,7 +293,13 @@ const App = (() => {
   //  REFRESH
   // ═══════════════════════════════════════════
   async function refresh() {
-    await loadData();
+    // Load song song notes + topics để đảm bảo topics luôn đầy đủ
+    const [data, topics] = await Promise.all([
+      API.getNotes({ q: state.searchQuery }),
+      API.getTopics(),
+    ]);
+    state.notes  = data.notes;
+    state.topics = topics;   // luôn lấy full list topics
     renderAll();
   }
 

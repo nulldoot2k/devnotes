@@ -7,25 +7,26 @@ import requests
 from datetime import datetime
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID", "")
-THREAD_ID   = os.getenv("TELEGRAM_THREAD_ID", "")
+CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID",   "")
+THREAD_ID = os.getenv("TELEGRAM_THREAD_ID", "")
 APP_NAME  = os.getenv("APP_NAME", "DevNotes")
 
 
 def _send(text: str) -> bool:
-    """Gửi message đến Telegram. Return True nếu thành công."""
     if not BOT_TOKEN or not CHAT_ID:
         print(f"[Telegram] Chưa cấu hình bot. Message: {text}")
         return False
+    payload = {
+        "chat_id":    CHAT_ID,
+        "text":       text,
+        "parse_mode": "HTML",
+    }
+    if THREAD_ID:
+        payload["message_thread_id"] = THREAD_ID
     try:
         resp = requests.post(
             f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            json={
-                "chat_id":    CHAT_ID,
-                "message_thread_id":    THREAD_ID,
-                "text":       text,
-                "parse_mode": "HTML",
-            },
+            json=payload,
             timeout=5,
         )
         return resp.status_code == 200
@@ -34,55 +35,44 @@ def _send(text: str) -> bool:
         return False
 
 
+def _ts() -> str:
+    return datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+
+
 def notify_login(username: str, ip: str = "unknown"):
-    now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     _send(
         f"🔐 <b>{APP_NAME} — Đăng nhập</b>\n"
         f"👤 User: <code>{username}</code>\n"
         f"🌐 IP: <code>{ip}</code>\n"
-        f"🕐 Thời gian: {now}"
+        f"🕐 {_ts()}"
     )
 
 
 def notify_failed_login(username: str, ip: str = "unknown"):
-    now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     _send(
         f"⚠️ <b>{APP_NAME} — Đăng nhập thất bại</b>\n"
         f"👤 User: <code>{username}</code>\n"
         f"🌐 IP: <code>{ip}</code>\n"
-        f"🕐 Thời gian: {now}"
+        f"🕐 {_ts()}"
     )
 
 
-def send_otp(email: str, otp: str, expire_minutes: int = 10):
-    now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+def send_otp(username: str, otp: str, expire_minutes: int = 10):
+    """Gửi OTP reset password (không kèm email)."""
     _send(
         f"🔑 <b>{APP_NAME} — Mã OTP đặt lại mật khẩu</b>\n"
-        f"📧 Email: <code>{email}</code>\n"
+        f"👤 User: <code>{username}</code>\n"
         f"🔢 OTP: <b><code>{otp}</code></b>\n"
         f"⏱ Hết hạn sau: {expire_minutes} phút\n"
-        f"🕐 Lúc: {now}\n\n"
-        f"<i>Nếu bạn không yêu cầu, hãy bỏ qua tin nhắn này.</i>"
+        f"🕐 {_ts()}"
     )
 
 
-def notify_password_changed(email: str, ip: str = "unknown"):
-    now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+def notify_password_changed(username: str, ip: str = "unknown"):
     _send(
         f"✅ <b>{APP_NAME} — Mật khẩu đã thay đổi</b>\n"
-        f"📧 Email: <code>{email}</code>\n"
+        f"👤 User: <code>{username}</code>\n"
         f"🌐 IP: <code>{ip}</code>\n"
-        f"🕐 Thời gian: {now}\n\n"
+        f"🕐 {_ts()}\n\n"
         f"<i>Nếu không phải bạn, hãy liên hệ admin ngay!</i>"
-    )
-
-
-def send_otp_no_email(otp: str, expire_minutes: int = 10):
-    """Gửi OTP không kèm email — dùng cho flow reset password đơn giản."""
-    now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-    _send(
-        f"🔑 <b>{APP_NAME} — Mã OTP đặt lại mật khẩu</b>\n"
-        f"🔢 OTP: <b><code>{otp}</code></b>\n"
-        f"⏱ Hết hạn sau: {expire_minutes} phút\n"
-        f"🕐 Lúc: {now}"
     )

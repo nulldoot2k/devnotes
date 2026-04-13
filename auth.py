@@ -1,5 +1,5 @@
 """
-auth.py — Auth helpers: password hash, OTP, JWT wrapper
+auth.py — Auth helpers: password hash, OTP, JWT decorator, rate limit
 """
 
 import os
@@ -15,7 +15,7 @@ from flask_jwt_extended import verify_jwt_in_request, get_jwt_identity
 OTP_EXPIRE_MINUTES = int(os.getenv("OTP_EXPIRE_MINUTES", "10"))
 
 
-# ── Password ─────────────────────────────────────────────────────
+# ── Password ──────────────────────────────────────────────────────
 
 def hash_password(plain: str) -> str:
     return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
@@ -28,7 +28,7 @@ def check_password(plain: str, hashed: str) -> bool:
         return False
 
 
-# ── OTP ──────────────────────────────────────────────────────────
+# ── OTP ───────────────────────────────────────────────────────────
 
 def generate_otp(length: int = 6) -> str:
     return "".join(random.choices(string.digits, k=length))
@@ -38,12 +38,10 @@ def otp_expires_at() -> str:
     return (datetime.now() + timedelta(minutes=OTP_EXPIRE_MINUTES)).isoformat()
 
 
-# ── JWT decorator ────────────────────────────────────────────────
+# ── JWT decorator ─────────────────────────────────────────────────
 
 def jwt_required_api(fn):
-    """
-    Decorator cho API routes — trả JSON 401 thay vì redirect.
-    """
+    """Decorator cho API routes — trả JSON 401 thay vì redirect."""
     @wraps(fn)
     def wrapper(*args, **kwargs):
         try:
@@ -54,8 +52,9 @@ def jwt_required_api(fn):
     return wrapper
 
 
+# ── Client IP ─────────────────────────────────────────────────────
+
 def get_client_ip() -> str:
-    """Lấy IP thực của client (qua proxy)."""
     return (
         request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
         or request.headers.get("X-Real-IP", "")

@@ -179,6 +179,22 @@ const MD = (() => {
     const prevBtn = document.getElementById("btnMdPreview");
     if (!toolbar || !ta) return;
 
+    // ── Paste handler: tự convert URL ảnh → ![](url) khi paste ──
+    ta.addEventListener("paste", e => {
+      const pasted = (e.clipboardData || window.clipboardData).getData("text");
+      if (!pasted) return;
+
+      const imageUrlRe = /^https?:\/\/[^\s<>"]+?\.(?:png|jpg|jpeg|gif|webp|svg)\s*$/i;
+      if (imageUrlRe.test(pasted.trim())) {
+        e.preventDefault(); // chặn paste thô
+        const converted = `![](${pasted.trim()})`;
+        const start = ta.selectionStart;
+        const end   = ta.selectionEnd;
+        ta.setRangeText(converted, start, end, "end");
+        ta.dispatchEvent(new Event("input")); // trigger preview nếu đang mở
+      }
+    });
+
     let showingPreview = false;
 
     toolbar.addEventListener("click", e => {

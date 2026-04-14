@@ -364,6 +364,17 @@
   })();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+<script>
+// ── Tự động convert URL ảnh thuần → markdown image syntax ────────
+// Đặt global ở đây để ui.js và app.js đều dùng được
+function preprocessMarkdown(text) {
+  // Match URL ảnh đứng một mình trên dòng riêng (không nằm trong ![]() hay []())
+  return text.replace(
+    /^(https?:\/\/[^\s<>"]+?\.(?:png|jpg|jpeg|gif|webp|svg))\s*$/gim,
+    "![]($1)"
+  );
+}
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="/static/js/api.js"></script>

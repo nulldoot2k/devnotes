@@ -797,6 +797,15 @@ mark {
 
 .md-rendered a { color: var(--accent2); text-decoration: underline; }
 
+.md-rendered img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  display: block;
+  margin: 10px auto;
+  border: 1px solid var(--border2);
+}
+
 .md-rendered table {
   border-collapse: collapse;
   width: 100%;

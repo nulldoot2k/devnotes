@@ -77,6 +77,25 @@ def login_page():
 def forgot_page():
     return render_template("forgot.html")
 
+@app.route("/api/image-proxy")
+def image_proxy():
+    """Proxy ảnh ngoài để tránh CORS khi export PDF."""
+    import requests as _req
+    from flask import Response, abort
+    url = request.args.get("url", "").strip()
+    if not url or not url.startswith(("http://", "https://")):
+        abort(400)
+    try:
+        r = _req.get(url, timeout=10,
+                     headers={"User-Agent": "Mozilla/5.0"},
+                     stream=True)
+        ct = r.headers.get("Content-Type", "image/png")
+        return Response(r.content, content_type=ct,
+                        headers={"Access-Control-Allow-Origin": "*"})
+    except Exception as e:
+        print(f"[image-proxy] lỗi: {e}")
+        abort(502)
+
 
 # ── Ensure admin user exists ──────────────────────────────────────
 

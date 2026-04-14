@@ -460,9 +460,53 @@ const App = (() => {
     }).join('');
   }
 
+  // Fetch ảnh qua Flask proxy → trả về base64 data URL
+  async function imgToBase64ViaProxy(url) {
+    try {
+      const res = await fetch(`/api/image-proxy?url=${encodeURIComponent(url)}`);
+      if (!res.ok) { console.warn('[PDF] proxy lỗi', res.status, url); return null; }
+      const blob = await res.blob();
+      return await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload  = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch (err) {
+      console.warn('[PDF] imgToBase64 thất bại:', url, err);
+      return null;
+    }
+  }
+
+  // Thay tất cả <img src="http..."> trong container thành base64
+  async function resolveImagesForPdf(container) {
+    const imgs = Array.from(container.querySelectorAll('img'));
+    console.log(`[PDF] Tìm thấy ${imgs.length} ảnh cần xử lý`);
+    await Promise.all(imgs.map(async img => {
+      const src = img.getAttribute('src') || '';
+      if (!src || src.startsWith('data:')) return;
+      console.log('[PDF] Đang fetch ảnh:', src);
+      const b64 = await imgToBase64ViaProxy(src);
+      if (b64) {
+        img.src = b64;
+        // Đảm bảo ảnh không vượt quá width container
+        img.style.maxWidth = '100%';
+        img.style.height   = 'auto';
+        console.log('[PDF] ✅ Đã convert:', src.slice(0, 60));
+      } else {
+        // Thay bằng label nếu không fetch được
+        const label = document.createElement('div');
+        label.style.cssText = 'border:1px dashed #94a3b8;padding:6px 10px;border-radius:4px;color:#64748b;font-size:11px;margin:4px 0;word-break:break-all;';
+        label.textContent = '[Ảnh không tải được: ' + src.slice(0, 80) + ']';
+        img.replaceWith(label);
+        console.warn('[PDF] ❌ Không fetch được:', src);
+      }
+    }));
+  }
+
   async function buildPdf(notes, topics, filename) {
     if (!notes.length) { UI.toast('⚠️ Không có note nào để export'); return; }
-    UI.toast('⏳ Đang tạo PDF…');
+    UI.toast('⏳ Đang tạo PDF… (đang tải ảnh, vui lòng chờ)');
 
     const container = document.createElement('div');
     container.id = 'pdfContainer';
@@ -500,6 +544,7 @@ const App = (() => {
       .pdf-body p  { margin: 0 0 8px; }
       .pdf-body ul, .pdf-body ol { padding-left: 20px; margin: 4px 0 10px; }
       .pdf-body li { margin: 3px 0; }
+      .pdf-body img { max-width: 680px; height: auto; display: block; margin: 8px 0; border-radius: 6px; }
       .pdf-body code { background: #f1f5f9; color: #0f766e; padding: 1px 5px; border-radius: 3px; font-size: 11px; font-family: monospace; }
       .pdf-body pre { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; overflow: hidden; margin: 8px 0; }
       .pdf-body pre code { background: none; color: #334155; font-size: 11px; }
@@ -513,14 +558,28 @@ const App = (() => {
     document.body.appendChild(container);
 
     try {
+      // Bước 1: Chờ ảnh load xong trong DOM (nếu có src thông thường)
+      await new Promise(r => setTimeout(r, 100));
+
+      // Bước 2: Convert tất cả ảnh → base64 qua proxy
+      await resolveImagesForPdf(container);
+
+      // Bước 3: Chờ thêm để browser render ảnh base64 xong
+      await new Promise(r => setTimeout(r, 300));
+
       const { jsPDF } = window.jspdf;
       const pdf  = new jsPDF({ unit: 'pt', format: 'a4' });
       const pdfW = pdf.internal.pageSize.getWidth();
       const pdfH = pdf.internal.pageSize.getHeight();
 
       const canvas = await html2canvas(container, {
-        scale: 2, useCORS: true, backgroundColor: '#ffffff',
-        width: 794, windowWidth: 794,
+        scale: 2,
+        useCORS: false,       // tắt vì ảnh đã là base64, không cần CORS
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        width: 794,
+        windowWidth: 794,
+        logging: false,
       });
 
       const imgData = canvas.toDataURL('image/jpeg', 0.92);
@@ -536,6 +595,9 @@ const App = (() => {
 
       pdf.save(filename);
       UI.toast(`✅ Đã export ${notes.length} notes ra PDF!`);
+    } catch (err) {
+      console.error('[PDF] Lỗi:', err);
+      UI.toast('❌ Export PDF thất bại: ' + err.message);
     } finally {
       document.body.removeChild(container);
       document.head.removeChild(style);

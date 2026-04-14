@@ -481,116 +481,168 @@ const App = (() => {
   // Thay tất cả <img src="http..."> trong container thành base64
   async function resolveImagesForPdf(container) {
     const imgs = Array.from(container.querySelectorAll('img'));
-    console.log(`[PDF] Tìm thấy ${imgs.length} ảnh cần xử lý`);
     await Promise.all(imgs.map(async img => {
       const src = img.getAttribute('src') || '';
       if (!src || src.startsWith('data:')) return;
-      console.log('[PDF] Đang fetch ảnh:', src);
       const b64 = await imgToBase64ViaProxy(src);
       if (b64) {
         img.src = b64;
-        // Đảm bảo ảnh không vượt quá width container
         img.style.maxWidth = '100%';
         img.style.height   = 'auto';
-        console.log('[PDF] ✅ Đã convert:', src.slice(0, 60));
       } else {
-        // Thay bằng label nếu không fetch được
         const label = document.createElement('div');
         label.style.cssText = 'border:1px dashed #94a3b8;padding:6px 10px;border-radius:4px;color:#64748b;font-size:11px;margin:4px 0;word-break:break-all;';
         label.textContent = '[Ảnh không tải được: ' + src.slice(0, 80) + ']';
         img.replaceWith(label);
-        console.warn('[PDF] ❌ Không fetch được:', src);
       }
     }));
   }
 
   async function buildPdf(notes, topics, filename) {
     if (!notes.length) { UI.toast('⚠️ Không có note nào để export'); return; }
-    UI.toast('⏳ Đang tạo PDF… (đang tải ảnh, vui lòng chờ)');
+    UI.toast('⏳ Đang tạo PDF… vui lòng chờ');
 
-    const container = document.createElement('div');
-    container.id = 'pdfContainer';
-    container.innerHTML = `
-      <div class="pdf-header">
-        <span class="pdf-logo">dev/notes</span>
-        <span class="pdf-meta">${notes.length} notes · ${new Date().toLocaleDateString('vi-VN')}</span>
-      </div>
-      <div class="pdf-content">${buildPdfHtml(notes, topics)}</div>`;
+    const { jsPDF } = window.jspdf;
 
-    const style = document.createElement('style');
-    style.textContent = `
-      #pdfContainer {
-        position: fixed; left: -9999px; top: 0;
-        width: 794px; background: #fff;
-        font-family: 'Sora', sans-serif;
-        color: #1a1a2e; font-size: 13px; line-height: 1.7;
+    const MARGIN_X = 40;
+    const MARGIN_Y = 36;
+
+    const pdf  = new jsPDF({ unit: 'pt', format: 'a4' });
+    const pdfW = pdf.internal.pageSize.getWidth();
+    const pdfH = pdf.internal.pageSize.getHeight();
+    const contentW = pdfW - MARGIN_X * 2;
+
+    // Style dùng chung cho mỗi note container
+    const CSS = `
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 0; background: #fff; }
+      .note-wrap {
+        width: 714px; padding: 0;
+        font-family: 'Sora', ui-sans-serif, sans-serif;
+        font-size: 13px; line-height: 1.75; color: #1e293b;
       }
-      .pdf-header {
-        background: #0d0f14; padding: 14px 28px;
-        display: flex; justify-content: space-between; align-items: center;
-      }
-      .pdf-logo { color: #4fffb0; font-weight: 700; font-size: 15px; }
-      .pdf-meta { color: #8892a4; font-size: 11px; }
-      .pdf-content { padding: 28px 36px; }
-      .pdf-note { margin-bottom: 8px; }
-      .pdf-sep { border-top: 1.5px dashed #cbd5e1; margin: 24px 0; }
-      .pdf-topic { font-size: 10px; color: #64748b; margin-bottom: 4px; font-weight: 600; }
-      .pdf-question { font-size: 16px; font-weight: 700; color: #0f172a; margin-bottom: 8px; }
+      .pdf-sep { border-top: 1.5px dashed #cbd5e1; margin: 0 0 24px 0; }
+      .pdf-topic { font-size: 10px; margin-bottom: 4px; font-weight: 600; }
+      .pdf-question { font-size: 15px; font-weight: 700; color: #0f172a; margin-bottom: 8px; }
       .pdf-divider { border-top: 1px solid #e2e8f0; margin-bottom: 12px; }
       .pdf-body { font-size: 12.5px; color: #334155; }
       .pdf-body h1 { font-size: 15px; font-weight: 700; margin: 14px 0 6px; color: #0f172a; }
-      .pdf-body h2 { font-size: 13px; font-weight: 700; margin: 12px 0 5px; color: #0369a1; }
-      .pdf-body h3 { font-size: 12px; font-weight: 700; margin: 10px 0 4px; color: #0284c7; }
+      .pdf-body h2 { font-size: 13px; font-weight: 700; margin: 12px 0 5px; color: #1d4ed8; }
+      .pdf-body h3 { font-size: 12px; font-weight: 700; margin: 10px 0 4px; color: #1d4ed8; }
       .pdf-body p  { margin: 0 0 8px; }
       .pdf-body ul, .pdf-body ol { padding-left: 20px; margin: 4px 0 10px; }
       .pdf-body li { margin: 3px 0; }
-      .pdf-body img { max-width: 680px; height: auto; display: block; margin: 8px 0; border-radius: 6px; }
+      .pdf-body img { max-width: 100%; height: auto; display: block; margin: 8px 0; border-radius: 6px; }
       .pdf-body code { background: #f1f5f9; color: #0f766e; padding: 1px 5px; border-radius: 3px; font-size: 11px; font-family: monospace; }
-      .pdf-body pre { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; overflow: hidden; margin: 8px 0; }
+      .pdf-body pre { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin: 8px 0; }
       .pdf-body pre code { background: none; color: #334155; font-size: 11px; }
-      .pdf-body blockquote { border-left: 3px solid #0ea5e9; margin: 8px 0; padding: 4px 12px; background: #f0f9ff; color: #475569; }
+      .pdf-body blockquote { border-left: 3px solid #3b82f6; margin: 8px 0; padding: 4px 12px; background: #eff6ff; color: #475569; }
       .pdf-body strong { color: #0f172a; font-weight: 700; }
       .pdf-tags { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
       .pdf-tag { background: #f1f5f9; color: #64748b; font-size: 10px; padding: 2px 8px; border-radius: 10px; }
     `;
 
-    document.head.appendChild(style);
-    document.body.appendChild(container);
+    const topicById = id => topics.find(t => String(t.id) === String(id));
 
-    try {
-      // Bước 1: Chờ ảnh load xong trong DOM (nếu có src thông thường)
+    // Render từng note thành canvas riêng
+    async function renderNoteCanvas(note, idx) {
+      const topic = topicById(note.topic);
+      const tags  = (note.tags || []).map(t => `<span class="pdf-tag">${t}</span>`).join('');
+      const topicBadge = topic
+        ? `<div class="pdf-topic" style="color:${topic.color}">[${topic.name}]</div>` : '';
+      const bodyHtml = (typeof marked !== 'undefined')
+        ? marked.parse(note.content)
+        : note.content.replace(/\n/g, '<br>');
+      const sep = idx > 0 ? '<div class="pdf-sep"></div>' : '';
+
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'position:fixed;left:-9999px;top:0;background:#fff;';
+      wrap.innerHTML = `
+        <style>${CSS}</style>
+        <div class="note-wrap">
+          ${sep}
+          <div class="pdf-note">
+            ${topicBadge}
+            <div class="pdf-question">${note.question}</div>
+            <div class="pdf-divider"></div>
+            <div class="pdf-body md-rendered">${bodyHtml}</div>
+            ${tags ? `<div class="pdf-tags">${tags}</div>` : ''}
+          </div>
+        </div>`;
+      document.body.appendChild(wrap);
+
+      // Resolve ảnh
+      await resolveImagesForPdf(wrap);
       await new Promise(r => setTimeout(r, 100));
 
-      // Bước 2: Convert tất cả ảnh → base64 qua proxy
-      await resolveImagesForPdf(container);
-
-      // Bước 3: Chờ thêm để browser render ảnh base64 xong
-      await new Promise(r => setTimeout(r, 300));
-
-      const { jsPDF } = window.jspdf;
-      const pdf  = new jsPDF({ unit: 'pt', format: 'a4' });
-      const pdfW = pdf.internal.pageSize.getWidth();
-      const pdfH = pdf.internal.pageSize.getHeight();
-
-      const canvas = await html2canvas(container, {
+      const canvas = await html2canvas(wrap, {
         scale: 2,
-        useCORS: false,       // tắt vì ảnh đã là base64, không cần CORS
+        useCORS: false,
         allowTaint: true,
         backgroundColor: '#ffffff',
-        width: 794,
-        windowWidth: 794,
+        width: 714,
+        windowWidth: 714,
         logging: false,
       });
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.92);
-      const imgW    = pdfW;
-      const imgH    = (canvas.height * pdfW) / canvas.width;
-      let   posY    = 0;
+      document.body.removeChild(wrap);
+      return canvas;
+    }
 
-      while (posY < imgH) {
-        if (posY > 0) pdf.addPage();
-        pdf.addImage(imgData, 'JPEG', 0, -posY, imgW, imgH);
-        posY += pdfH;
+    try {
+      let curY    = MARGIN_Y;  // vị trí Y hiện tại trên trang
+      let isFirst = true;
+
+      for (let i = 0; i < notes.length; i++) {
+        UI.toast(`⏳ Đang xử lý note ${i + 1}/${notes.length}…`);
+
+        const canvas   = await renderNoteCanvas(notes[i], i);
+        const pxToPt   = contentW / canvas.width;
+        const noteH_pt = canvas.height * pxToPt;
+
+        // Nếu note không vừa phần còn lại của trang → sang trang mới
+        // (trừ note đầu tiên)
+        const remaining = pdfH - curY - MARGIN_Y;
+        if (!isFirst && noteH_pt > remaining) {
+          pdf.addPage();
+          curY = MARGIN_Y;
+        }
+
+        // Note cao hơn 1 trang → cắt thành nhiều slice
+        if (noteH_pt > pdfH - MARGIN_Y * 2) {
+          const slicePx = Math.round((pdfH - MARGIN_Y * 2) / pxToPt);
+          let srcY = 0;
+
+          while (srcY < canvas.height) {
+            if (srcY > 0) {
+              pdf.addPage();
+              curY = MARGIN_Y;
+            }
+
+            const cropH  = Math.min(slicePx, canvas.height - srcY);
+            const slice  = document.createElement('canvas');
+            slice.width  = canvas.width;
+            slice.height = cropH;
+            slice.getContext('2d').drawImage(
+              canvas, 0, srcY, canvas.width, cropH,
+                      0, 0,   canvas.width, cropH
+            );
+
+            const cropH_pt = cropH * pxToPt;
+            pdf.addImage(slice.toDataURL('image/jpeg', 0.92), 'JPEG',
+              MARGIN_X, curY, contentW, cropH_pt);
+
+            curY += cropH_pt;
+            srcY += slicePx;
+          }
+        } else {
+          // Note vừa gọn → đặt thẳng
+          pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG',
+            MARGIN_X, curY, contentW, noteH_pt);
+          curY += noteH_pt;
+        }
+
+        isFirst = false;
       }
 
       pdf.save(filename);
@@ -598,9 +650,6 @@ const App = (() => {
     } catch (err) {
       console.error('[PDF] Lỗi:', err);
       UI.toast('❌ Export PDF thất bại: ' + err.message);
-    } finally {
-      document.body.removeChild(container);
-      document.head.removeChild(style);
     }
   }
 

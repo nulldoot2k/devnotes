@@ -227,32 +227,42 @@ const App = (() => {
 
     state.viewingId = id;
 
-    // Render vào modal bình thường
-    const topic = topicById(n.topic);
-    const tags  = (n.tags || []).map(t => `<span class="tag">${UI.esc(t)}</span>`).join("");
-
-    const topicBadge = topic
-      ? `<span class="detail-topic-badge"
-              style="background:${topic.color}18;color:${topic.color};border:1px solid ${topic.color}33">
-           ${UI.esc(topic.name)}
-         </span>`
-      : "";
-
-    document.getElementById("detailMeta").innerHTML =
-      `${topicBadge}${tags}
-       <span style="margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--text3)">
-         ${UI.fmtDate(n.updatedAt)}
-       </span>`;
-
+    // Tiêu đề chính
     document.getElementById("detailQuestion").textContent = n.question;
 
+    // Meta: Topic + Tags + Ngày
+    const topic = topicById(n.topic);
+    let metaHTML = '';
+
+    if (topic) {
+      metaHTML += `
+        <span class="detail-topic-badge" 
+              style="background:${topic.color}18;color:${topic.color};border:1px solid ${topic.color}33">
+          ${UI.esc(topic.name)}
+        </span>`;
+    }
+
+    if (n.tags && n.tags.length > 0) {
+      metaHTML += (n.tags || []).map(t => 
+        `<span class="tag">${UI.esc(t)}</span>`
+      ).join('');
+    }
+
+    metaHTML += `
+      <span style="margin-left:auto;font-family:var(--mono);font-size:12.5px;color:var(--text3)">
+        ${UI.fmtDate(n.updatedAt)}
+      </span>`;
+
+    document.getElementById("detailMeta").innerHTML = metaHTML;
+
+    // Nội dung Markdown
     const answerEl = document.getElementById("detailAnswer");
     answerEl.innerHTML = (typeof marked !== 'undefined') 
       ? marked.parse(n.content) 
       : n.content.replace(/\n/g, '<br>');
     answerEl.classList.add('md-rendered');
 
-    // Các nút chức năng
+    // Button handlers
     document.getElementById("detailEditBtn").onclick   = () => openEditModal(id);
     document.getElementById("detailDeleteBtn").onclick = async () => {
       if (!confirm("Xóa note này?")) return;
@@ -269,16 +279,14 @@ const App = (() => {
     document.getElementById("detailCopyBtn").onclick = () => {
       navigator.clipboard.writeText(n.content).then(() => {
         UI.toast("📋 Đã sao chép nội dung Markdown!");
-      }).catch(() => {
-        UI.toast("📋 Đã sao chép!");
-      });
+      }).catch(() => UI.toast("📋 Đã sao chép!"));
     };
 
     document.getElementById("detailExportPdfBtn").onclick = () => {
       exportSingleNotePdf(n);
     };
 
-    // Reset nút fullscreen về trạng thái phóng to
+    // Reset nút fullscreen
     const fsBtn = document.getElementById("btnDetailFullscreen");
     if (fsBtn) fsBtn.innerHTML = "⛶";
 

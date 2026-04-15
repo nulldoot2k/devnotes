@@ -269,21 +269,24 @@
 ══════════════════════════════════════════ -->
 <div class="modal-overlay" id="modalDetail">
   <div class="modal modal-wide">
-      <div class="modal-header">
-        <div class="modal-title">📖 Chi tiết Note</div>
-        
-        <div class="modal-header-actions">
-          <button id="btnDetailFullscreen" class="btn-icon" title="Phóng to toàn màn hình (F11)">
-            ⛶
-          </button>
-          <button class="close-btn" data-close="modalDetail" title="Đóng">×</button>
-        </div>
+    <div class="modal-header">
+      <div class="detail-header-left">
+        <div class="detail-question" id="detailQuestion"></div>
+        <div class="detail-meta" id="detailMeta"></div>
       </div>
-    <div class="modal-body">
-      <div class="detail-meta"     id="detailMeta"></div>
-      <div class="detail-question" id="detailQuestion"></div>
-      <div class="detail-answer"   id="detailAnswer"></div>
+      
+      <div class="modal-header-actions">
+        <button id="btnDetailFullscreen" class="btn-icon" title="Phóng to toàn màn hình (F11)">
+          ⛶
+        </button>
+        <button class="close-btn" data-close="modalDetail" title="Đóng">×</button>
+      </div>
     </div>
+    
+    <div class="modal-body">
+      <div class="detail-answer" id="detailAnswer"></div>
+    </div>
+    
     <div class="modal-footer">
       <button class="btn btn-danger btn-sm" id="detailDeleteBtn">🗑 Xóa</button>
       <button class="btn btn-ghost btn-sm"  id="detailCopyBtn" title="Sao chép nội dung Markdown">📋 Copy MD</button>

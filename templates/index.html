@@ -185,6 +185,25 @@
   </div>
 </div>
 
+<!-- ══════════════════════════════════════════
+     Fullscreen Detail View
+══════════════════════════════════════════ -->
+<div class="fs-overlay" id="fsDetail">
+  <div class="fs-header">
+    <div class="fs-title" id="fsDetailTitle"></div>
+    
+    <button id="fsDetailClose" class="fs-close-btn" title="Thu nhỏ về modal">
+      ⊠ Thu nhỏ
+    </button>
+  </div>
+
+  <div class="fs-detail-meta" id="fsDetailMeta"></div>
+
+  <div class="fs-detail-body">
+    <div id="fsDetailContent" class="md-rendered"></div>
+  </div>
+</div>
+
 <style>
 /* ── Nút expand ─────────────────────────────── */
 .md-btn--expand { margin-left: auto; font-size: 16px; opacity: .65; }
@@ -250,10 +269,16 @@
 ══════════════════════════════════════════ -->
 <div class="modal-overlay" id="modalDetail">
   <div class="modal modal-wide">
-    <div class="modal-header">
-      <div class="modal-title">📖 Chi tiết Note</div>
-      <button class="close-btn" data-close="modalDetail">×</button>
-    </div>
+      <div class="modal-header">
+        <div class="modal-title">📖 Chi tiết Note</div>
+        
+        <div class="modal-header-actions">
+          <button id="btnDetailFullscreen" class="btn-icon" title="Phóng to toàn màn hình (F11)">
+            ⛶
+          </button>
+          <button class="close-btn" data-close="modalDetail" title="Đóng">×</button>
+        </div>
+      </div>
     <div class="modal-body">
       <div class="detail-meta"     id="detailMeta"></div>
       <div class="detail-question" id="detailQuestion"></div>

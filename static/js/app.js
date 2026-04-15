@@ -219,13 +219,15 @@ const App = (() => {
   }
 
   // ═══════════════════════════════════════════
-  //  DETAIL
+  //  DETAIL MODAL
   // ═══════════════════════════════════════════
   function openDetail(id) {
     const n = state.notes.find(x => String(x.id) === String(id));
     if (!n) return;
+
     state.viewingId = id;
 
+    // Render vào modal bình thường
     const topic = topicById(n.topic);
     const tags  = (n.tags || []).map(t => `<span class="tag">${UI.esc(t)}</span>`).join("");
 
@@ -243,10 +245,14 @@ const App = (() => {
        </span>`;
 
     document.getElementById("detailQuestion").textContent = n.question;
+
     const answerEl = document.getElementById("detailAnswer");
-    answerEl.innerHTML = (typeof marked !== 'undefined') ? marked.parse(n.content) : n.content.replace(/\n/g,'<br>');
+    answerEl.innerHTML = (typeof marked !== 'undefined') 
+      ? marked.parse(n.content) 
+      : n.content.replace(/\n/g, '<br>');
     answerEl.classList.add('md-rendered');
 
+    // Các nút chức năng
     document.getElementById("detailEditBtn").onclick   = () => openEditModal(id);
     document.getElementById("detailDeleteBtn").onclick = async () => {
       if (!confirm("Xóa note này?")) return;
@@ -255,29 +261,26 @@ const App = (() => {
         UI.closeModal("modalDetail");
         UI.toast("🗑 Đã xóa note");
         await refresh();
-      } catch (err) { UI.toast("❌ " + err.message); }
+      } catch (err) { 
+        UI.toast("❌ " + err.message); 
+      }
     };
 
-    // Copy markdown content
     document.getElementById("detailCopyBtn").onclick = () => {
       navigator.clipboard.writeText(n.content).then(() => {
         UI.toast("📋 Đã sao chép nội dung Markdown!");
       }).catch(() => {
-        // Fallback
-        const ta = document.createElement("textarea");
-        ta.value = n.content;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        document.body.removeChild(ta);
         UI.toast("📋 Đã sao chép!");
       });
     };
 
-    // Export single note as PDF
     document.getElementById("detailExportPdfBtn").onclick = () => {
       exportSingleNotePdf(n);
     };
+
+    // Reset nút fullscreen về trạng thái phóng to
+    const fsBtn = document.getElementById("btnDetailFullscreen");
+    if (fsBtn) fsBtn.innerHTML = "⛶";
 
     UI.openModal("modalDetail");
   }
@@ -431,6 +434,113 @@ const App = (() => {
     }
 
     return { init, open, close };
+  })();
+  
+  // ═══════════════════════════════════════════
+  //  FULLSCREEN DETAIL VIEW (Phóng to modal Chi tiết Note)
+  // ═══════════════════════════════════════════
+  const FSD = (() => {
+    const overlay   = () => document.getElementById("fsDetail");
+    const titleEl   = () => document.getElementById("fsDetailTitle");
+    const metaEl    = () => document.getElementById("fsDetailMeta");
+    const contentEl = () => document.getElementById("fsDetailContent");
+    
+    let currentNoteId = null;
+
+    function open(note) {
+      if (!note) return;
+      currentNoteId = note.id;
+
+      titleEl().textContent = note.question || "Chi tiết Note";
+
+      // Meta
+      const topic = topicById ? topicById(note.topic) : null;
+      let metaHTML = '';
+
+      if (topic) {
+        metaHTML += `
+          <span class="detail-topic-badge" 
+                style="background:${topic.color}18;color:${topic.color};border:1px solid ${topic.color}33;">
+            ${UI.esc(topic.name)}
+          </span>`;
+      }
+
+      if (note.tags && note.tags.length > 0) {
+        metaHTML += (note.tags || []).map(t => 
+          `<span class="tag">${UI.esc(t)}</span>`
+        ).join('');
+      }
+
+      metaHTML += `
+        <span style="margin-left:auto;font-family:var(--mono);font-size:13px;color:#64748b;">
+          ${UI.fmtDate(note.updatedAt)}
+        </span>`;
+
+      metaEl().innerHTML = metaHTML;
+
+      // Nội dung
+      const htmlContent = (typeof marked !== 'undefined') 
+        ? marked.parse(note.content || "") 
+        : (note.content || "").replace(/\n/g, '<br>');
+
+      contentEl().innerHTML = htmlContent;
+      contentEl().classList.add('md-rendered');
+
+      overlay().classList.add("show");
+
+      // Đổi icon nút phóng to trong modal thành trạng thái đã phóng to
+      const fsBtn = document.getElementById("btnDetailFullscreen");
+      if (fsBtn) fsBtn.innerHTML = "❐";
+    }
+
+    function close() {
+      overlay().classList.remove("show");
+      
+      const fsBtn = document.getElementById("btnDetailFullscreen");
+      if (fsBtn) fsBtn.innerHTML = "⛶";
+
+      currentNoteId = null;
+    }
+
+    function toggle() {
+      if (overlay().classList.contains("show")) {
+        close();
+      } else if (state.viewingId) {
+        const note = state.notes.find(n => String(n.id) === String(state.viewingId));
+        if (note) open(note);
+      }
+    }
+
+    function init() {
+      const fsButton = document.getElementById("btnDetailFullscreen");
+      if (fsButton) fsButton.addEventListener("click", toggle);
+
+      const closeFsBtn = document.getElementById("fsDetailClose");
+      if (closeFsBtn) closeFsBtn.addEventListener("click", close);
+
+      // Xử lý Escape - quan trọng: dùng capture phase + stopImmediatePropagation
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && overlay().classList.contains("show")) {
+          e.preventDefault();
+          e.stopImmediatePropagation();   // ← Rất quan trọng
+          close();
+        }
+      }, true);   // true = capture phase (chạy trước các handler khác)
+
+      // F11
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "F11") {
+          const modalOpen = document.getElementById("modalDetail").classList.contains("show");
+          const fsOpen    = overlay().classList.contains("show");
+          if (modalOpen || fsOpen) {
+            e.preventDefault();
+            toggle();
+          }
+        }
+      });
+    }
+
+    return { init, open, close, toggle };
   })();
 
   // ═══════════════════════════════════════════
@@ -923,6 +1033,7 @@ const App = (() => {
   // ═══════════════════════════════════════════
   async function init() {
     wireEvents();
+    FSD.init();
     await refresh();
   }
 

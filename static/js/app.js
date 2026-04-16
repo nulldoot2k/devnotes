@@ -408,27 +408,47 @@ const App = (() => {
     }
 
     function init() {
-      // Nút expand trong toolbar
       document.getElementById("btnMdExpand").addEventListener("click", open);
-
-      // Nút thu nhỏ trong FS header — chỉ thu nhỏ, không hỏi gì
       document.getElementById("fsBtnClose").addEventListener("click", close);
-
-      // Nút lưu trong FS header — gọi saveNote() của App
       document.getElementById("fsBtnSave").addEventListener("click", async () => {
         close();
         setTimeout(() => document.getElementById("btnSaveNote").click(), 50);
       });
 
+      // ── Scroll sync: textarea → preview ──
+      fsTa().addEventListener("scroll", () => {
+        const ta = fsTa();
+        const pv = preview();
+        if (!pv) return;
+        const ratio = ta.scrollTop / (ta.scrollHeight - ta.clientHeight || 1);
+        pv.scrollTop = ratio * (pv.scrollHeight - pv.clientHeight);
+      });
+
+      // Paste handler
+      fsTa().addEventListener("paste", e => {
+        const pasted = (e.clipboardData || window.clipboardData).getData("text");
+        if (!pasted) return;
+        const imageUrlRe = /^https?:\/\/[^\s<>"]+?\.(?:png|jpg|jpeg|gif|webp|svg)(\?[^\s]*)?$/i;
+        if (imageUrlRe.test(pasted.trim())) {
+          e.preventDefault();
+          const ta = fsTa();
+          const converted = `![](${pasted.trim()})`;
+          const start = ta.selectionStart;
+          const end   = ta.selectionEnd;
+          ta.setRangeText(converted, start, end, "end");
+          updatePreview();
+        }
+      });
+
       // Live preview khi gõ
       fsTa().addEventListener("input", updatePreview);
 
-      // Phím tắt trong FS: Escape = thu nhỏ (KHÔNG thoát), Tab = indent
+      // Phím tắt trong FS
       fsTa().addEventListener("keydown", e => {
         if (e.key === "Escape") {
           e.preventDefault();
-          e.stopPropagation(); // chặn bubble lên global handler
-          close();             // chỉ thu nhỏ về modal, không đóng modal
+          e.stopPropagation();
+          close();
           return;
         }
         if (e.key === "Tab") {

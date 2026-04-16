@@ -180,20 +180,26 @@ const MD = (() => {
     if (!toolbar || !ta) return;
 
     // ── Paste handler: tự convert URL ảnh → ![](url) khi paste ──
-    ta.addEventListener("paste", e => {
+    // Xóa handler cũ trước để tránh gắn chồng nhiều lần khi mở lại modal
+    if (ta._pasteHandler) {
+      ta.removeEventListener("paste", ta._pasteHandler);
+    }
+    ta._pasteHandler = e => {
       const pasted = (e.clipboardData || window.clipboardData).getData("text");
       if (!pasted) return;
 
-      const imageUrlRe = /^https?:\/\/[^\s<>"]+?\.(?:png|jpg|jpeg|gif|webp|svg)\s*$/i;
+      // Hỗ trợ thêm URL có query string (?v=..., ?w=... v.v.)
+      const imageUrlRe = /^https?:\/\/[^\s<>"]+?\.(?:png|jpg|jpeg|gif|webp|svg)(\?[^\s]*)?$/i;
       if (imageUrlRe.test(pasted.trim())) {
-        e.preventDefault(); // chặn paste thô
+        e.preventDefault();
         const converted = `![](${pasted.trim()})`;
         const start = ta.selectionStart;
         const end   = ta.selectionEnd;
         ta.setRangeText(converted, start, end, "end");
-        ta.dispatchEvent(new Event("input")); // trigger preview nếu đang mở
+        ta.dispatchEvent(new Event("input"));
       }
-    });
+    };
+    ta.addEventListener("paste", ta._pasteHandler);
 
     let showingPreview = false;
 

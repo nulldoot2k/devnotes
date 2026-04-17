@@ -30,7 +30,7 @@ app.config["SECRET_KEY"]               = os.getenv("FLASK_SECRET_KEY", "dev-secr
 app.config["JWT_SECRET_KEY"]           = os.getenv("JWT_SECRET_KEY",   "jwt-secret")
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=12)
 app.config["JWT_TOKEN_LOCATION"]       = ["headers", "cookies"]
-app.config["JWT_COOKIE_SECURE"]        = False   # True khi production + HTTPS
+app.config["JWT_COOKIE_SECURE"]        = False
 app.config["JWT_COOKIE_CSRF_PROTECT"]  = False
 
 jwt = JWTManager(app)
@@ -43,17 +43,12 @@ def unauthorized_callback(_reason):
     return redirect("/login")
 
 # ── Rate limiting ─────────────────────────────────────────────────
-# Giới hạn brute-force login và OTP request
-# Mặc định dùng memory storage (đủ cho single-process)
-# Production: RATELIMIT_STORAGE_URI=redis://localhost:6379
 limiter = Limiter(
     key_func=get_remote_address,
     app=app,
     default_limits=[],
     storage_uri=os.getenv("RATELIMIT_STORAGE_URI", "memory://"),
 )
-
-# Áp rate limit cho auth endpoints quan trọng
 limiter.limit("10 per minute")(auth_bp)
 
 # ── Register Blueprints ───────────────────────────────────────────
@@ -99,6 +94,17 @@ def image_proxy():
         abort(502)
 
 
+# ── Serve ảnh từ thư mục temp ─────────────────────────────────────
+@app.route('/temp/<path:filename>')
+def serve_temp_images(filename):
+    """Phục vụ ảnh từ ./temp/ """
+    from flask import send_from_directory, abort
+    try:
+        return send_from_directory('temp', filename)
+    except FileNotFoundError:
+        abort(404)
+
+
 # ── Ensure admin user exists ──────────────────────────────────────
 
 def ensure_admin():
@@ -111,6 +117,16 @@ def ensure_admin():
         print(f"✅ Admin user tạo: {username}")
 
 
+# ── Startup cleanup ───────────────────────────────────────────────
+
+def startup_cleanup():
+    try:
+        from image_cache import cleanup_expired_temp
+        cleanup_expired_temp()
+    except Exception as e:
+        print(f"⚠️  Startup cleanup lỗi: {e}")
+
+
 # ── Main ──────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -120,6 +136,8 @@ if __name__ == "__main__":
     if not db.get_notes():
         from seed import seed_data
         seed_data()
+
+    startup_cleanup()
 
     print("🚀 DevNotes chạy tại: http://localhost:5000")
     app.run(debug=True, port=5000, host="0.0.0.0")

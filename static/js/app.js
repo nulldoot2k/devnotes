@@ -121,23 +121,55 @@ const App = (() => {
   //  UNSAVED CHANGES GUARD
   // ═══════════════════════════════════════════
 
-  let _savedQuestion = "";
-  let _savedContent  = "";
-
+  let _savedQuestion   = "";
+  let _savedContent    = "";
+  let _originalContent = "";
+ 
   function markSaved() {
     _savedQuestion = document.getElementById("fQuestion").value;
     _savedContent  = document.getElementById("fContent").value;
   }
-
+ 
   function hasUnsavedChanges() {
     const q = document.getElementById("fQuestion").value;
     const c = document.getElementById("fContent").value;
     return q !== _savedQuestion || c !== _savedContent;
   }
-
+ 
+  // ← THÊM: discard ảnh temp khi thoát không save
+  function _discardCurrentTemp() {
+    const ta = document.getElementById("fContent");
+    if (!ta) return;
+    const content = ta.value || "";
+    if (content.includes("/static/temp/")) {
+      API.discardImages(content).catch(() => {});
+    }
+  }
+ 
   function confirmClose() {
-    if (!hasUnsavedChanges()) return true;
-    return confirm("Bạn có nội dung chưa lưu. Thoát không?");
+    if (!hasUnsavedChanges()) {
+      _discardCurrentTemp();   // ← THÊM
+      return true;
+    }
+    if (confirm("Bạn có nội dung chưa lưu. Thoát không?")) {
+      _discardCurrentTemp();   // ← THÊM
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Gọi /api/images/discard cho tất cả URL temp trong textarea hiện tại.
+   * Dùng khi user đóng modal mà không bấm Save.
+   */
+  function _discardCurrentTemp() {
+    const ta = document.getElementById("fContent");
+    if (!ta) return;
+    const content = ta.value || "";
+    // Chỉ gọi nếu có URL temp (tránh request thừa)
+    if (content.includes("/static/temp/")) {
+      API.discardImages(content).catch(() => {});
+    }
   }
 
   // ═══════════════════════════════════════════
@@ -252,6 +284,7 @@ const App = (() => {
 
   function openAddModal() {
     editingId = null;
+    _originalContent = "";
     document.getElementById("modalNoteTitle").textContent = "✏️ Thêm Note Mới";
     document.getElementById("fNoteId").value   = "";
     document.getElementById("fQuestion").value = "";
@@ -270,6 +303,7 @@ const App = (() => {
     const n = state.notes.find(x => String(x.id) === String(id));
     if (!n) return;
     editingId = id;
+    _originalContent = n.content;
     document.getElementById("modalNoteTitle").textContent = "✏️ Chỉnh sửa Note";
     document.getElementById("fNoteId").value   = id;
     document.getElementById("fQuestion").value = n.question;

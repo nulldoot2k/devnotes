@@ -5,22 +5,29 @@ routes/notes.py — Blueprint /api/notes/*
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import get_jwt_identity
 
-from db   import get_db
-from auth import jwt_required_api
+from db         import get_db
+from auth       import jwt_required_api
+from image_cache import commit_images, discard_temp_images   # ← giữ nguyên
 
 notes_bp = Blueprint("notes", __name__, url_prefix="/api/notes")
 
 
-def _owner(db_mode="single"):
-    """
-    Trả owner_id cho note/topic.
-    single mode → '__shared__' (tất cả cùng xem)
-    multi  mode → username hiện tại
-    """
+def _owner():
     import os
     if os.getenv("OWNER_MODE", "single") == "multi":
         return get_jwt_identity()
     return "__shared__"
+
+
+def _normalize_topic_id(topic_raw):
+    if not topic_raw:
+        return None
+    try:
+        if str(topic_raw).strip().isdigit():
+            return int(topic_raw)
+        return None
+    except (ValueError, TypeError):
+        return None
 
 
 @notes_bp.route("", methods=["GET"])
@@ -28,14 +35,11 @@ def _owner(db_mode="single"):
 def get_notes():
     db       = get_db()
     q        = request.args.get("q", "").strip()
-    topic_id = request.args.get("topic", "")
-    owner    = _owner()
+    topic_id = request.args.get("topic", "").strip()
 
-    notes  = db.get_notes(
-        q=q,
-        topic_id=int(topic_id) if topic_id.isdigit() else None,
-        owner_id=owner,
-    )
+    owner = _owner()
+
+    notes  = db.get_notes(q=q, topic_id=_normalize_topic_id(topic_id), owner_id=owner)
     topics = db.get_topics(owner_id=owner)
     return jsonify({"notes": notes, "topics": topics})
 
@@ -50,18 +54,19 @@ def create_note():
     if not question or not content:
         return jsonify({"error": "question và content là bắt buộc"}), 400
 
-    topic_raw = body.get("topic")
-    if topic_raw:
-        topic_id = int(topic_raw) if str(topic_raw).isdigit() else str(topic_raw)
-    else:
-        topic_id = None
-    tags      = body.get("tags", [])
+    topic_id = _normalize_topic_id(body.get("topic"))
+    tags     = body.get("tags", [])
     if not isinstance(tags, list):
         tags = []
 
-    note = get_db().create_note(
-        question, content, topic_id, tags, owner_id=_owner()
-    )
+    db = get_db()
+    owner = _owner()
+
+    note = db.create_note(question, content, topic_id, tags, owner_id=owner)
+
+    # Track ảnh
+    commit_images(old_content=None, new_content=content, note_id=note["id"])
+
     return jsonify(note), 201
 
 
@@ -69,24 +74,35 @@ def create_note():
 @jwt_required_api
 def update_note(note_id):
     body      = request.json or {}
-    topic_raw = body.get("topic")
-    if topic_raw:
-        topic_id = int(topic_raw) if str(topic_raw).isdigit() else str(topic_raw)
-    else:
-        topic_id = None
+    question  = body.get("question", "").strip() or None
+    content   = body.get("content",   "").strip() or None
+    topic_id  = _normalize_topic_id(body.get("topic"))
     tags      = body.get("tags", [])
     if not isinstance(tags, list):
         tags = []
 
-    note = get_db().update_note(
+    db = get_db()
+    old_note = db.get_note(note_id)
+    if not old_note:
+        return jsonify({"error": "Không tìm thấy note"}), 404
+
+    note = db.update_note(
         note_id,
-        question=body.get("question", "").strip() or None,
-        content=body.get("content",   "").strip() or None,
+        question=question,
+        content=content,
         topic_id=topic_id,
         tags=tags,
     )
     if note is None:
         return jsonify({"error": "Không tìm thấy note"}), 404
+
+    # Xử lý ảnh khi edit
+    commit_images(
+        old_content=old_note["content"],
+        new_content=content or old_note["content"],
+        note_id=note_id
+    )
+
     return jsonify(note)
 
 

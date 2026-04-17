@@ -55,7 +55,6 @@ const App = (() => {
   function renderTopics() {
     const list = document.getElementById("topicList");
 
-    // Count per topic
     const countMap = {};
     state.notes.forEach(n => {
       if (n.topic) countMap[String(n.topic)] = (countMap[String(n.topic)] || 0) + 1;
@@ -83,7 +82,6 @@ const App = (() => {
     const notes = filteredNotes();
     const q     = state.searchQuery;
 
-    // Toolbar
     const topic = state.filterTopic ? topicById(state.filterTopic) : null;
     document.getElementById("viewTitle").textContent =
       topic ? topic.name : (q ? `"${q}"` : "Tất cả Notes");
@@ -123,7 +121,6 @@ const App = (() => {
   //  UNSAVED CHANGES GUARD
   // ═══════════════════════════════════════════
 
-  // Lưu nội dung gốc khi mở modal để so sánh khi đóng
   let _savedQuestion = "";
   let _savedContent  = "";
 
@@ -135,13 +132,117 @@ const App = (() => {
   function hasUnsavedChanges() {
     const q = document.getElementById("fQuestion").value;
     const c = document.getElementById("fContent").value;
-    // Có thay đổi so với lúc mở, HOẶC có nội dung mới (modal thêm mới)
     return q !== _savedQuestion || c !== _savedContent;
   }
 
   function confirmClose() {
     if (!hasUnsavedChanges()) return true;
     return confirm("Bạn có nội dung chưa lưu. Thoát không?");
+  }
+
+  // ═══════════════════════════════════════════
+  //  IMAGE PASTE HANDLER
+  //  Dùng chung cho cả #fContent và #fsContent
+  // ═══════════════════════════════════════════
+
+  /**
+   * Chèn text vào textarea tại vị trí con trỏ.
+   * @param {HTMLTextAreaElement} ta
+   * @param {string} text
+   */
+  function insertAtCursor(ta, text) {
+    const start = ta.selectionStart;
+    const end   = ta.selectionEnd;
+    ta.setRangeText(text, start, end, "end");
+    // Trigger input event để live-preview cập nhật
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  /**
+   * Xử lý paste ảnh từ clipboard vào một textarea.
+   * - Thêm placeholder `<!-- Uploading "filename"... -->`
+   * - Upload lên server
+   * - Thay placeholder bằng `<img ... src="url" />`
+   *
+   * @param {ClipboardEvent} e
+   * @param {HTMLTextAreaElement} ta  — textarea nhận paste
+   */
+  async function handleImagePaste(e, ta) {
+    const items = Array.from(e.clipboardData?.items || []);
+    const imageItem = items.find(it => it.type.startsWith("image/"));
+    if (!imageItem) return;   // không có ảnh → để trình duyệt xử lý bình thường
+
+    e.preventDefault();
+
+    const file      = imageItem.getAsFile();
+    const ext       = file.type.split("/")[1]?.replace("jpeg", "jpg") || "png";
+    const filename  = `image.${ext}`;
+    const placeholder = `<!-- Uploading "${filename}"... -->`;
+
+    // 1. Chèn placeholder ngay lập tức
+    insertAtCursor(ta, placeholder);
+
+    // Lưu vị trí placeholder để replace sau
+    // (placeholder bắt đầu tại selectionStart - placeholder.length sau khi chèn)
+    const placeholderStart = ta.selectionStart - placeholder.length;
+
+    try {
+      // 2. Upload lên server
+      const { url } = await API.uploadImage(file);
+
+      // Kích thước thực tế của ảnh (để điền width/height)
+      let width = 0, height = 0;
+      try {
+        const bmp = await createImageBitmap(file);
+        width  = bmp.width;
+        height = bmp.height;
+        bmp.close();
+      } catch (_) { /* bỏ qua nếu trình duyệt không hỗ trợ */ }
+
+      // 3. Build chuỗi thay thế giống GitHub
+      //    <img width="W" height="H" alt="Image" src="URL" />
+      //    Nếu không lấy được kích thước thì bỏ width/height
+      let imgTag;
+      if (width && height) {
+        imgTag = `<img width="${width}" height="${height}" alt="Image" src="${url}" />`;
+      } else {
+        imgTag = `<img alt="Image" src="${url}" />`;
+      }
+
+      // 4. Replace placeholder bằng img tag
+      //    Tìm lại placeholder trong value (đề phòng user đã gõ thêm)
+      const currentVal = ta.value;
+      const idx = currentVal.indexOf(placeholder, Math.max(0, placeholderStart - 5));
+      if (idx !== -1) {
+        ta.value =
+          currentVal.slice(0, idx) +
+          imgTag +
+          currentVal.slice(idx + placeholder.length);
+        // Đặt con trỏ sau img tag
+        const newPos = idx + imgTag.length;
+        ta.setSelectionRange(newPos, newPos);
+      } else {
+        // Fallback: placeholder bị mất (user xoá) → chèn vào vị trí con trỏ hiện tại
+        insertAtCursor(ta, imgTag);
+      }
+
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+      UI.toast("🖼 Đã upload ảnh!");
+
+    } catch (err) {
+      // Upload thất bại → xoá placeholder, hiển thị lỗi
+      const currentVal = ta.value;
+      const idx = currentVal.indexOf(placeholder, Math.max(0, placeholderStart - 5));
+      if (idx !== -1) {
+        ta.value =
+          currentVal.slice(0, idx) +
+          currentVal.slice(idx + placeholder.length);
+        const newPos = idx;
+        ta.setSelectionRange(newPos, newPos);
+        ta.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      UI.toast(`❌ Upload ảnh thất bại: ${err.message}`);
+    }
   }
 
   // ═══════════════════════════════════════════
@@ -160,7 +261,7 @@ const App = (() => {
     UI.openModal("modalNote");
     MD.initToolbar();
     setTimeout(() => {
-      markSaved(); // snapshot trạng thái rỗng
+      markSaved();
       document.getElementById("fQuestion").focus();
     }, 80);
   }
@@ -178,12 +279,11 @@ const App = (() => {
     UI.closeModal("modalDetail");
     UI.openModal("modalNote");
     MD.initToolbar();
-    // reset preview
     const prev = document.getElementById('mdPreview');
     const ta   = document.getElementById('fContent');
     const pb   = document.getElementById('btnMdPreview');
     if (prev) { prev.style.display='none'; ta.style.display='block'; pb.textContent='👁 Preview'; pb.classList.remove('active'); }
-    markSaved(); // snapshot nội dung gốc
+    markSaved();
   }
 
   async function saveNote() {
@@ -210,7 +310,7 @@ const App = (() => {
         await API.createNote(payload);
         UI.toast("✅ Đã thêm note mới!");
       }
-      markSaved(); // reset guard sau khi lưu thành công
+      markSaved();
       UI.closeModal("modalNote");
       await refresh();
     } catch (err) {
@@ -227,10 +327,8 @@ const App = (() => {
 
     state.viewingId = id;
 
-    // Tiêu đề chính
     document.getElementById("detailQuestion").textContent = n.question;
 
-    // Meta: Topic + Tags + Ngày
     const topic = topicById(n.topic);
     let metaHTML = '';
 
@@ -255,14 +353,12 @@ const App = (() => {
 
     document.getElementById("detailMeta").innerHTML = metaHTML;
 
-    // Nội dung Markdown
     const answerEl = document.getElementById("detailAnswer");
     answerEl.innerHTML = (typeof marked !== 'undefined') 
       ? marked.parse(n.content) 
       : n.content.replace(/\n/g, '<br>');
     answerEl.classList.add('md-rendered');
 
-    // Button handlers
     document.getElementById("detailEditBtn").onclick   = () => openEditModal(id);
     document.getElementById("detailDeleteBtn").onclick = async () => {
       if (!confirm("Xóa note này?")) return;
@@ -286,7 +382,6 @@ const App = (() => {
       exportSingleNotePdf(n);
     };
 
-    // Reset nút fullscreen
     const fsBtn = document.getElementById("btnDetailFullscreen");
     if (fsBtn) fsBtn.innerHTML = "⛶";
 
@@ -387,9 +482,7 @@ const App = (() => {
     }
 
     function open() {
-      // Sync nội dung từ textarea chính vào FS
       fsTa().value = mainTa().value;
-      // Hiển thị tiêu đề note
       const q = document.getElementById("fQuestion").value.trim();
       titleEl().textContent = q ? "✏️ " + q : "✏️ Editor";
       overlay().classList.add("show");
@@ -402,7 +495,6 @@ const App = (() => {
     }
 
     function close() {
-      // Sync nội dung ngược lại vào textarea chính
       mainTa().value = fsTa().value;
       overlay().classList.remove("show");
     }
@@ -415,7 +507,7 @@ const App = (() => {
         setTimeout(() => document.getElementById("btnSaveNote").click(), 50);
       });
 
-      // ── Scroll sync: textarea → preview ──
+      // Scroll sync: textarea → preview
       fsTa().addEventListener("scroll", () => {
         const ta = fsTa();
         const pv = preview();
@@ -424,8 +516,19 @@ const App = (() => {
         pv.scrollTop = ratio * (pv.scrollHeight - pv.clientHeight);
       });
 
-      // Paste handler
-      fsTa().addEventListener("paste", e => {
+      // ── Paste handler cho fsContent ──────────────────────
+      // Ưu tiên: ảnh → upload | URL ảnh → convert | text thường → default
+      fsTa().addEventListener("paste", async e => {
+        // 1. Thử xử lý ảnh từ clipboard
+        const items = Array.from(e.clipboardData?.items || []);
+        const imageItem = items.find(it => it.type.startsWith("image/"));
+        if (imageItem) {
+          await handleImagePaste(e, fsTa());
+          updatePreview();
+          return;
+        }
+
+        // 2. URL ảnh thuần (hành vi cũ)
         const pasted = (e.clipboardData || window.clipboardData).getData("text");
         if (!pasted) return;
         const imageUrlRe = /^https?:\/\/[^\s<>"]+?\.(?:png|jpg|jpeg|gif|webp|svg)(\?[^\s]*)?$/i;
@@ -465,7 +568,7 @@ const App = (() => {
   })();
   
   // ═══════════════════════════════════════════
-  //  FULLSCREEN DETAIL VIEW (Phóng to modal Chi tiết Note)
+  //  FULLSCREEN DETAIL VIEW
   // ═══════════════════════════════════════════
   const FSD = (() => {
     const overlay   = () => document.getElementById("fsDetail");
@@ -481,7 +584,6 @@ const App = (() => {
 
       titleEl().textContent = note.question || "Chi tiết Note";
 
-      // Meta
       const topic = topicById ? topicById(note.topic) : null;
       let metaHTML = '';
 
@@ -506,7 +608,6 @@ const App = (() => {
 
       metaEl().innerHTML = metaHTML;
 
-      // Nội dung
       const htmlContent = (typeof marked !== 'undefined') 
         ? marked.parse(note.content || "") 
         : (note.content || "").replace(/\n/g, '<br>');
@@ -516,7 +617,6 @@ const App = (() => {
 
       overlay().classList.add("show");
 
-      // Đổi icon nút phóng to trong modal thành trạng thái đã phóng to
       const fsBtn = document.getElementById("btnDetailFullscreen");
       if (fsBtn) fsBtn.innerHTML = "❐";
     }
@@ -546,16 +646,14 @@ const App = (() => {
       const closeFsBtn = document.getElementById("fsDetailClose");
       if (closeFsBtn) closeFsBtn.addEventListener("click", close);
 
-      // Xử lý Escape - quan trọng: dùng capture phase + stopImmediatePropagation
       document.addEventListener("keydown", (e) => {
         if (e.key === "Escape" && overlay().classList.contains("show")) {
           e.preventDefault();
-          e.stopImmediatePropagation();   // ← Rất quan trọng
+          e.stopImmediatePropagation();
           close();
         }
-      }, true);   // true = capture phase (chạy trước các handler khác)
+      }, true);
 
-      // F11
       document.addEventListener("keydown", (e) => {
         if (e.key === "F11") {
           const modalOpen = document.getElementById("modalDetail").classList.contains("show");
@@ -598,7 +696,6 @@ const App = (() => {
     }).join('');
   }
 
-  // Fetch ảnh qua Flask proxy → trả về base64 data URL
   async function imgToBase64ViaProxy(url) {
     try {
       const res = await fetch(`/api/image-proxy?url=${encodeURIComponent(url)}`);
@@ -616,7 +713,6 @@ const App = (() => {
     }
   }
 
-  // Thay tất cả <img src="http..."> trong container thành base64
   async function resolveImagesForPdf(container) {
     const imgs = Array.from(container.querySelectorAll('img'));
     await Promise.all(imgs.map(async img => {
@@ -650,7 +746,6 @@ const App = (() => {
     const pdfH = pdf.internal.pageSize.getHeight();
     const contentW = pdfW - MARGIN_X * 2;
 
-    // Style dùng chung cho mỗi note container
     const CSS = `
       * { box-sizing: border-box; }
       body { margin: 0; padding: 0; background: #fff; }
@@ -682,7 +777,6 @@ const App = (() => {
 
     const topicById = id => topics.find(t => String(t.id) === String(id));
 
-    // Render từng note thành canvas riêng
     async function renderNoteCanvas(note, idx) {
       const topic = topicById(note.topic);
       const tags  = (note.tags || []).map(t => `<span class="pdf-tag">${t}</span>`).join('');
@@ -709,7 +803,6 @@ const App = (() => {
         </div>`;
       document.body.appendChild(wrap);
 
-      // Resolve ảnh
       await resolveImagesForPdf(wrap);
       await new Promise(r => setTimeout(r, 100));
 
@@ -728,7 +821,7 @@ const App = (() => {
     }
 
     try {
-      let curY    = MARGIN_Y;  // vị trí Y hiện tại trên trang
+      let curY    = MARGIN_Y;
       let isFirst = true;
 
       for (let i = 0; i < notes.length; i++) {
@@ -738,15 +831,12 @@ const App = (() => {
         const pxToPt   = contentW / canvas.width;
         const noteH_pt = canvas.height * pxToPt;
 
-        // Nếu note không vừa phần còn lại của trang → sang trang mới
-        // (trừ note đầu tiên)
         const remaining = pdfH - curY - MARGIN_Y;
         if (!isFirst && noteH_pt > remaining) {
           pdf.addPage();
           curY = MARGIN_Y;
         }
 
-        // Note cao hơn 1 trang → cắt thành nhiều slice
         if (noteH_pt > pdfH - MARGIN_Y * 2) {
           const slicePx = Math.round((pdfH - MARGIN_Y * 2) / pxToPt);
           let srcY = 0;
@@ -774,7 +864,6 @@ const App = (() => {
             srcY += slicePx;
           }
         } else {
-          // Note vừa gọn → đặt thẳng
           pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG',
             MARGIN_X, curY, contentW, noteH_pt);
           curY += noteH_pt;
@@ -861,19 +950,17 @@ const App = (() => {
     // Header buttons
     document.getElementById("btnAdd").addEventListener("click", openAddModal);
 
-    // Change password
     const changePwBtn = document.getElementById("btnChangePassword");
     if (changePwBtn) changePwBtn.addEventListener("click", () => {
       window.location.href = "/forgot-password";
     });
 
-    // Logout
     const logoutBtn = document.getElementById("btnLogout");
     if (logoutBtn) logoutBtn.addEventListener("click", () => {
       if (confirm("Đăng xuất?")) API.logout();
     });
 
-    // ── User dropdown toggle ──────────────────────────────
+    // User dropdown toggle
     const btnUserMenu  = document.getElementById("btnUserMenu");
     const userDropdown = document.getElementById("userDropdown");
     if (btnUserMenu && userDropdown) {
@@ -885,7 +972,6 @@ const App = (() => {
       userDropdown.addEventListener("click", e => e.stopPropagation());
     }
 
-    // Show username
     const userEl = document.getElementById("headerUser");
     if (userEl) userEl.textContent = "👤 " + (localStorage.getItem("dn_user") || "");
     document.getElementById("btnExport").addEventListener("click", exportData);
@@ -894,10 +980,8 @@ const App = (() => {
       UI.openModal("modalImport");
     });
 
-    // Export PDF modal
     wireExportPdfModal();
 
-    // Save note
     document.getElementById("btnSaveNote").addEventListener("click", saveNote);
 
     // Search
@@ -911,7 +995,6 @@ const App = (() => {
       }, 220);
     });
 
-    // Clear filter
     document.getElementById("btnClearFilter").addEventListener("click", async () => {
       state.filterTopic = null;
       state.searchQuery = "";
@@ -919,16 +1002,13 @@ const App = (() => {
       await refresh();
     });
 
-    // Add topic
     document.getElementById("btnAddTopic").addEventListener("click", addTopic);
     document.getElementById("newTopicInput").addEventListener("keydown", e => {
       if (e.key === "Enter") addTopic();
     });
 
-    // Import actions
     document.getElementById("btnDoImport").addEventListener("click", doImport);
 
-    // File input → paste textarea
     document.getElementById("fileInput").addEventListener("change", e => {
       const file = e.target.files[0];
       if (!file) return;
@@ -938,7 +1018,6 @@ const App = (() => {
       e.target.value = "";
     });
 
-    // Drag & drop on import zone
     const zone = document.getElementById("importDropZone");
     zone.addEventListener("dragover",  e => { e.preventDefault(); zone.classList.add("drag-over"); });
     zone.addEventListener("dragleave", () => zone.classList.remove("drag-over"));
@@ -995,39 +1074,42 @@ const App = (() => {
       }
     });
 
-    // ── Nút X và Hủy trên modal Note → hỏi xác nhận nếu có thay đổi ──
+    // ── Paste ảnh vào #fContent (modal editor) ────────────
+    document.getElementById("fContent").addEventListener("paste", async e => {
+      const items = Array.from(e.clipboardData?.items || []);
+      const imageItem = items.find(it => it.type.startsWith("image/"));
+      if (!imageItem) return;  // không có ảnh → browser xử lý bình thường
+
+      await handleImagePaste(e, document.getElementById("fContent"));
+    });
+
+    // Nút X và Hủy trên modal Note
     document.querySelectorAll('[data-close="modalNote"]').forEach(btn => {
       btn.addEventListener("click", e => {
         if (!confirmClose()) {
           e.stopImmediatePropagation();
           e.preventDefault();
-        }
-        // Nếu cho phép đóng, reset guard
-        else {
+        } else {
           markSaved();
         }
-      }, true); // capture để chạy trước handler gốc của UI
+      }, true);
     });
 
     // Keyboard shortcuts
     document.addEventListener("keydown", e => {
       if (e.key === "Escape") {
-        // FS đang mở → chỉ thu nhỏ, Esc đã được xử lý trong fsTa keydown
-        // (stopPropagation ở đó), nhưng giữ thêm guard ở đây cho chắc
         if (document.getElementById("fsEditor").classList.contains("show")) {
           FS.close(); return;
         }
 
-        // Modal Note đang mở → hỏi xác nhận nếu có nội dung chưa lưu
         const modalNote = document.getElementById("modalNote");
         if (modalNote.classList.contains("show")) {
-          if (!confirmClose()) return; // chặn đóng
+          if (!confirmClose()) return;
           markSaved();
           modalNote.classList.remove("show");
           return;
         }
 
-        // Các modal khác → đóng bình thường
         document.querySelectorAll(".modal-overlay.show")
           .forEach(m => m.classList.remove("show"));
       }
@@ -1041,7 +1123,6 @@ const App = (() => {
         e.preventDefault();
         openAddModal();
       }
-      // F11 → toggle fullscreen editor (khi modal note đang mở)
       if (e.key === "F11") {
         const modalOpen = document.getElementById("modalNote").classList.contains("show");
         const fsOpen    = document.getElementById("fsEditor").classList.contains("show");
@@ -1052,7 +1133,6 @@ const App = (() => {
       }
     });
 
-    // Init fullscreen editor
     FS.init();
   }
 

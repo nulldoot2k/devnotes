@@ -21,6 +21,7 @@ from flask_limiter.util import get_remote_address
 from db    import get_db
 from auth  import hash_password
 from routes import auth_bp, notes_bp, topics_bp, data_bp
+from routes.images import images_bp
 
 # ── App setup ─────────────────────────────────────────────────────
 
@@ -61,6 +62,7 @@ app.register_blueprint(auth_bp)
 app.register_blueprint(notes_bp)
 app.register_blueprint(topics_bp)
 app.register_blueprint(data_bp)
+app.register_blueprint(images_bp)
 
 
 # ── Page routes ───────────────────────────────────────────────────

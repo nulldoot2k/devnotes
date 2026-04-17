@@ -112,5 +112,29 @@ const API = (() => {
     importData(payload) {
       return request("POST", "/api/import", payload);
     },
+
+    // ── Image Upload ─────────────────────────────────────────
+    async uploadImage(file) {
+      const token = getToken();
+      const form  = new FormData();
+      form.append("file", file);
+
+      const res = await fetch("/api/images/upload", {
+        method:  "POST",
+        headers: token ? { "Authorization": `Bearer ${token}` } : {},
+        body:    form,
+      });
+
+      if (res.status === 401) {
+        localStorage.removeItem("dn_token");
+        localStorage.removeItem("dn_user");
+        window.location.href = "/login";
+        return;
+      }
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      return data;
+    },
   };
 })();

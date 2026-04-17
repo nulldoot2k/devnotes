@@ -7,6 +7,6 @@ openssl req -x509 -nodes -days 3650 \
   -keyout certs/devnotes.key \
   -out certs/devnotes.crt \
   -subj "/CN=devnotes.dev" \
-  -addext "subjectAltName=DNS:devnotes.dev,DNS:*.devnotes.dev"
+  -addext "subjectAltName=DNS:devnotes.local,DNS:*.devnotes.local"
 
 echo "✅ Cert created: certs/devnotes.crt + certs/devnotes.key"

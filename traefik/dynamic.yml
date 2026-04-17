@@ -1,0 +1,19 @@
+http:
+  routers:
+    devnotes:
+      rule: "Host(`devnotes.local`)"
+      entryPoints:
+        - websecure
+      tls: {}
+      service: devnotes
+
+  services:
+    devnotes:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:5000"
+
+tls:
+  certificates:
+    - certFile: /certs/devnotes.crt
+      keyFile: /certs/devnotes.key

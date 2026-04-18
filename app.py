@@ -13,7 +13,7 @@ from datetime import timedelta
 from dotenv import load_dotenv
 load_dotenv()
 
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory, abort
 from flask_jwt_extended import JWTManager
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -74,6 +74,25 @@ def login_page():
 def forgot_page():
     return render_template("forgot.html")
 
+@app.route("/temp/<path:filename>")
+def serve_temp_image(filename):
+    """
+    Serve ảnh từ ./temp/ — Flask không tự serve thư mục này
+    vì nó không nằm trong static/.
+    Chỉ cho phép file ảnh hợp lệ, chặn path traversal.
+    """
+    from pathlib import Path
+    from image_cache import TEMP_DIR
+
+    # Chặn path traversal
+    if "/" in filename or "\\" in filename or ".." in filename:
+        abort(400)
+    # Chỉ cho phép extension ảnh
+    if Path(filename).suffix.lower() not in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"}:
+        abort(400)
+    return send_from_directory(str(TEMP_DIR), filename)
+
+
 @app.route("/api/image-proxy")
 def image_proxy():
     """Proxy ảnh ngoài để tránh CORS khi export PDF."""
@@ -94,17 +113,6 @@ def image_proxy():
         abort(502)
 
 
-# ── Serve ảnh từ thư mục temp ─────────────────────────────────────
-@app.route('/temp/<path:filename>')
-def serve_temp_images(filename):
-    """Phục vụ ảnh từ ./temp/ """
-    from flask import send_from_directory, abort
-    try:
-        return send_from_directory('temp', filename)
-    except FileNotFoundError:
-        abort(404)
-
-
 # ── Ensure admin user exists ──────────────────────────────────────
 
 def ensure_admin():
@@ -117,9 +125,13 @@ def ensure_admin():
         print(f"✅ Admin user tạo: {username}")
 
 
-# ── Startup cleanup ───────────────────────────────────────────────
+# ── Startup cleanup: xóa ảnh temp hết hạn ────────────────────────
 
 def startup_cleanup():
+    """
+    Dọn dẹp khi app khởi động:
+    Xóa ảnh trong ./temp/ cũ hơn IMAGE_CACHE_TTL_MINUTES và không thuộc note nào.
+    """
     try:
         from image_cache import cleanup_expired_temp
         cleanup_expired_temp()

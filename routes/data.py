@@ -7,7 +7,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import get_jwt_identity
 
 from db   import get_db
-from auth import jwt_required_api
+from utils.auth_utils import jwt_required_api
 
 data_bp = Blueprint("data", __name__, url_prefix="/api")
 

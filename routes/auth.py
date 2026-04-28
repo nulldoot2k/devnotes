@@ -18,12 +18,12 @@ from flask_jwt_extended import (
 )
 
 from db   import get_db
-from auth import (
+from utils.auth_utils import (
     hash_password, check_password,
     generate_otp, otp_expires_at,
     jwt_required_api, get_client_ip,
 )
-import telegram as tg
+import services.telegram as tg
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 

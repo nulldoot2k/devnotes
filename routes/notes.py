@@ -6,8 +6,8 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import get_jwt_identity
 
 from db          import get_db
-from auth        import jwt_required_api
-from image_cache import commit_images
+from utils.auth_utils import jwt_required_api
+from services.image_cache import commit_images
 
 notes_bp = Blueprint("notes", __name__, url_prefix="/api/notes")
 

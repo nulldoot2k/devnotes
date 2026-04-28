@@ -1,31 +1,32 @@
 """
-telegram.py — Gửi thông báo qua Telegram Bot
+services/telegram.py — Gửi thông báo qua Telegram Bot
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Chuyển từ telegram.py (gốc) vào services/ để nhóm các service ngoài lại.
 """
 
-import os
 import requests
 from datetime import datetime
 
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID",   "")
-THREAD_ID = os.getenv("TELEGRAM_THREAD_ID", "")
-APP_NAME  = os.getenv("APP_NAME", "DevNotes")
+from config import settings
 
 
 def _send(text: str) -> bool:
-    if not BOT_TOKEN or not CHAT_ID:
+    """Gửi tin nhắn thô đến Telegram."""
+    if not settings.TELEGRAM_BOT_TOKEN or not settings.TELEGRAM_CHAT_ID:
         print(f"[Telegram] Chưa cấu hình bot. Message: {text}")
         return False
+
     payload = {
-        "chat_id":    CHAT_ID,
+        "chat_id":    settings.TELEGRAM_CHAT_ID,
         "text":       text,
         "parse_mode": "HTML",
     }
-    if THREAD_ID:
-        payload["message_thread_id"] = THREAD_ID
+    if settings.TELEGRAM_THREAD_ID:
+        payload["message_thread_id"] = settings.TELEGRAM_THREAD_ID
+
     try:
         resp = requests.post(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+            f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/sendMessage",
             json=payload,
             timeout=5,
         )
@@ -41,7 +42,7 @@ def _ts() -> str:
 
 def notify_login(username: str, ip: str = "unknown"):
     _send(
-        f"🔐 <b>{APP_NAME} — Đăng nhập</b>\n"
+        f"🔐 <b>{settings.APP_NAME} — Đăng nhập</b>\n"
         f"👤 User: <code>{username}</code>\n"
         f"🌐 IP: <code>{ip}</code>\n"
         f"🕐 {_ts()}"
@@ -50,27 +51,26 @@ def notify_login(username: str, ip: str = "unknown"):
 
 def notify_failed_login(username: str, ip: str = "unknown"):
     _send(
-        f"⚠️ <b>{APP_NAME} — Đăng nhập thất bại</b>\n"
+        f"⚠️ <b>{settings.APP_NAME} — Đăng nhập thất bại</b>\n"
         f"👤 User: <code>{username}</code>\n"
         f"🌐 IP: <code>{ip}</code>\n"
         f"🕐 {_ts()}"
     )
 
 
-def send_otp(username: str, otp: str, expire_minutes: int = 10):
-    """Gửi OTP reset password (không kèm email)."""
+def send_otp(username: str, otp: str):
     _send(
-        f"🔑 <b>{APP_NAME} — Mã OTP đặt lại mật khẩu</b>\n"
+        f"🔑 <b>{settings.APP_NAME} — Mã OTP đặt lại mật khẩu</b>\n"
         f"👤 User: <code>{username}</code>\n"
         f"🔢 OTP: <b><code>{otp}</code></b>\n"
-        f"⏱ Hết hạn sau: {expire_minutes} phút\n"
+        f"⏱ Hết hạn sau: {settings.OTP_EXPIRE_MINUTES} phút\n"
         f"🕐 {_ts()}"
     )
 
 
 def notify_password_changed(username: str, ip: str = "unknown", new_password: str = ""):
     _send(
-        f"✅ <b>{APP_NAME} — Mật khẩu đã thay đổi</b>\n"
+        f"✅ <b>{settings.APP_NAME} — Mật khẩu đã thay đổi</b>\n"
         f"👤 User: <code>{username}</code>\n"
         f"🔑 Mật khẩu mới: <code>{new_password}</code>\n"
         f"🌐 IP: <code>{ip}</code>\n"

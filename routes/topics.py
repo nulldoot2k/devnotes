@@ -5,7 +5,7 @@ routes/topics.py — Blueprint /api/topics/*
 from flask import Blueprint, request, jsonify
 
 from db   import get_db
-from auth import jwt_required_api
+from utils.auth_utils import jwt_required_api
 
 topics_bp = Blueprint("topics", __name__, url_prefix="/api/topics")
 

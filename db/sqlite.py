@@ -1,0 +1,135 @@
+"""
+db/sqlite.py — SQLite backend
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Dùng mặc định khi không khai báo DATABASE_URL hay MONGO_URI.
+Lưu dữ liệu vào file data/devnotes.db.
+"""
+
+import sqlite3
+from contextlib import contextmanager
+
+from config import settings
+from db._shared import build_sql_backend
+
+DB_PATH = settings.DB_PATH
+
+
+@contextmanager
+def get_conn():
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def _existing_columns(conn, table):
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return {row["name"] for row in rows}
+
+
+def init():
+    """Tạo bảng và chạy migration nếu cần."""
+    with get_conn() as conn:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS users (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                username   TEXT UNIQUE NOT NULL,
+                email      TEXT UNIQUE NOT NULL,
+                password   TEXT NOT NULL,
+                role       TEXT NOT NULL DEFAULT 'user',
+                created_at TEXT DEFAULT (datetime('now')),
+                last_login TEXT
+            );
+            CREATE TABLE IF NOT EXISTS topics (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_id   TEXT NOT NULL DEFAULT '__shared__',
+                name       TEXT NOT NULL,
+                color      TEXT NOT NULL DEFAULT '#4fffb0',
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+            CREATE TABLE IF NOT EXISTS notes (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_id   TEXT NOT NULL DEFAULT '__shared__',
+                question   TEXT NOT NULL,
+                content    TEXT NOT NULL,
+                topic_id   INTEGER REFERENCES topics(id) ON DELETE SET NULL,
+                tags       TEXT DEFAULT '[]',
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now'))
+            );
+            CREATE TABLE IF NOT EXISTS otp_tokens (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                username   TEXT NOT NULL,
+                token      TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                used       INTEGER DEFAULT 0
+            );
+            CREATE TABLE IF NOT EXISTS images (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename   TEXT UNIQUE NOT NULL,
+                folder     TEXT NOT NULL DEFAULT 'uploads',
+                note_id    TEXT,
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+        """)
+
+        # Migration an toàn: thêm cột nếu thiếu
+        migrations = [
+            ("users",  "role",     "TEXT NOT NULL DEFAULT 'user'"),
+            ("notes",  "owner_id", "TEXT NOT NULL DEFAULT '__shared__'"),
+            ("topics", "owner_id", "TEXT NOT NULL DEFAULT '__shared__'"),
+            ("images", "note_id",  "TEXT"),
+        ]
+        for table, col, definition in migrations:
+            cols = _existing_columns(conn, table)
+            if col not in cols:
+                try:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {definition}")
+                    print(f"  ↳ Migrated: Added {table}.{col}")
+                except sqlite3.OperationalError as e:
+                    if "duplicate column" not in str(e).lower():
+                        raise
+
+        # Migration otp_tokens: email → username
+        otp_cols = _existing_columns(conn, "otp_tokens")
+        if "username" not in otp_cols:
+            if "email" in otp_cols:
+                print("  ↳ Migrating otp_tokens: email → username")
+                conn.executescript("""
+                    ALTER TABLE otp_tokens RENAME TO otp_tokens_old;
+                    CREATE TABLE otp_tokens (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        username   TEXT NOT NULL,
+                        token      TEXT NOT NULL,
+                        expires_at TEXT NOT NULL,
+                        used       INTEGER DEFAULT 0
+                    );
+                    INSERT INTO otp_tokens (id, username, token, expires_at, used)
+                        SELECT id, email, token, expires_at, used FROM otp_tokens_old;
+                    DROP TABLE otp_tokens_old;
+                """)
+            else:
+                conn.execute("ALTER TABLE otp_tokens ADD COLUMN username TEXT NOT NULL DEFAULT ''")
+
+        conn.executescript("""
+            CREATE INDEX IF NOT EXISTS idx_notes_owner  ON notes(owner_id);
+            CREATE INDEX IF NOT EXISTS idx_notes_topic  ON notes(topic_id);
+            CREATE INDEX IF NOT EXISTS idx_topics_owner ON topics(owner_id);
+            CREATE INDEX IF NOT EXISTS idx_images_note  ON images(note_id);
+        """)
+
+    print(f"✅ SQLite database ready: {DB_PATH}")
+
+
+def create_backend():
+    """Khởi tạo và trả về dict CRUD functions."""
+    init()
+    return build_sql_backend(get_conn, P="?")

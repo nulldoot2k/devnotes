@@ -15,8 +15,8 @@ from pathlib import Path
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import get_jwt_identity
 
-from auth         import jwt_required_api
-from image_cache  import save_temp, discard_temp_images
+from utils.auth_utils import jwt_required_api
+from services.image_cache import save_temp, discard_temp_images
 
 images_bp = Blueprint("images", __name__, url_prefix="/api/images")
 

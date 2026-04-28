@@ -58,9 +58,6 @@ const API = (() => {
       return request("GET", "/api/auth/me");
     },
 
-    /**
-     * Đổi mật khẩu — cần đăng nhập, cần mật khẩu cũ
-     */
     changePassword(oldPassword, newPassword) {
       return request("POST", "/api/auth/change-password", {
         old_password: oldPassword,
@@ -114,6 +111,11 @@ const API = (() => {
     },
 
     // ── Image Upload ─────────────────────────────────────────
+    /**
+     * Upload ảnh lên static/temp/ (cache tạm).
+     * Ảnh chỉ được persist khi note được Save.
+     * Trả về { url, filename, temp: true }
+     */
     async uploadImage(file) {
       const token = getToken();
       const form  = new FormData();
@@ -135,6 +137,15 @@ const API = (() => {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       return data;
+    },
+
+    /**
+     * Báo server xóa ảnh temp trong content (khi Cancel / đóng modal).
+     * @param {string} content — nội dung markdown hiện tại trong textarea
+     */
+    discardImages(content) {
+      if (!content || !content.includes("/static/temp/")) return Promise.resolve();
+      return request("POST", "/api/images/discard", { content });
     },
   };
 })();

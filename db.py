@@ -2,7 +2,7 @@
 db.py — Database layer
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Ưu tiên detect backend từ env:
-  1. MONGO_URI       → MongoDB
+  1. MONGO_URI       → MongoDB (nếu connect được)
   2. DATABASE_URL    → PostgreSQL hoặc MySQL
   3. (không khai báo) → SQLite (mặc định, lưu file)
 
@@ -10,6 +10,10 @@ Multi-user ready:
   - notes, topics đều có owner_id (= username)
   - OWNER_MODE=single (default) → tất cả dùng chung 1 pool
   - OWNER_MODE=multi  → mỗi user chỉ thấy data của mình
+
+Image tracking:
+  - Bảng images lưu metadata từng file ảnh (filename, folder, note_id)
+  - track_image / untrack_image được gọi từ image_cache.py
 """
 
 import os
@@ -63,13 +67,11 @@ def _sqlite_backend():
             conn.close()
 
     def _existing_columns(conn, table):
-        """Trả set tên cột hiện có của table."""
         rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
         return {row["name"] for row in rows}
 
     def init():
         with get_conn() as conn:
-            # ── Tạo bảng mới nếu chưa có ─────────────────────────
             conn.executescript("""
                 CREATE TABLE IF NOT EXISTS users (
                     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -104,27 +106,38 @@ def _sqlite_backend():
                     expires_at TEXT NOT NULL,
                     used       INTEGER DEFAULT 0
                 );
+                CREATE TABLE IF NOT EXISTS images (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    filename   TEXT UNIQUE NOT NULL,
+                    folder     TEXT NOT NULL DEFAULT 'uploads',
+                    note_id    TEXT,
+                    created_at TEXT DEFAULT (datetime('now'))
+                );
             """)
 
-            # ── Migrate DB cũ: thêm cột còn thiếu ───────────────
-            # SQLite không có "ADD COLUMN IF NOT EXISTS"
-            # nên phải check thủ công từng cột một.
+            # === MIGRATION AN TOÀN ===
             migrations = [
                 ("users",  "role",     "TEXT NOT NULL DEFAULT 'user'"),
                 ("notes",  "owner_id", "TEXT NOT NULL DEFAULT '__shared__'"),
                 ("topics", "owner_id", "TEXT NOT NULL DEFAULT '__shared__'"),
+                ("images", "note_id",  "TEXT"),                    # ← Đây là cột gây lỗi
             ]
             for table, col, definition in migrations:
                 cols = _existing_columns(conn, table)
                 if col not in cols:
-                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {definition}")
-                    print(f"  ↳ Migrated: {table}.{col} added")
+                    try:
+                        conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {definition}")
+                        print(f"  ↳ Migrated: Added {table}.{col}")
+                    except sqlite3.OperationalError as e:
+                        if "duplicate column" not in str(e).lower():
+                            raise
+                        print(f"  ↳ {table}.{col} already exists (skipped)")
 
-            # ── otp_tokens: đổi tên cột email → username ─────────
-            # Phiên bản cũ dùng cột 'email', phiên bản mới dùng 'username'
+            # Migration otp_tokens (nếu cần)
             otp_cols = _existing_columns(conn, "otp_tokens")
             if "username" not in otp_cols:
                 if "email" in otp_cols:
+                    print("  ↳ Migrating otp_tokens: email → username")
                     conn.executescript("""
                         ALTER TABLE otp_tokens RENAME TO otp_tokens_old;
                         CREATE TABLE otp_tokens (
@@ -138,20 +151,18 @@ def _sqlite_backend():
                             SELECT id, email, token, expires_at, used FROM otp_tokens_old;
                         DROP TABLE otp_tokens_old;
                     """)
-                    print("  ↳ Migrated: otp_tokens.email → otp_tokens.username")
                 else:
-                    conn.execute(
-                        "ALTER TABLE otp_tokens ADD COLUMN username TEXT NOT NULL DEFAULT ''"
-                    )
+                    conn.execute("ALTER TABLE otp_tokens ADD COLUMN username TEXT NOT NULL DEFAULT ''")
 
-            # ── Index ─────────────────────────────────────────────
+            # Index
             conn.executescript("""
                 CREATE INDEX IF NOT EXISTS idx_notes_owner  ON notes(owner_id);
                 CREATE INDEX IF NOT EXISTS idx_notes_topic  ON notes(topic_id);
                 CREATE INDEX IF NOT EXISTS idx_topics_owner ON topics(owner_id);
+                CREATE INDEX IF NOT EXISTS idx_images_note  ON images(note_id);
             """)
 
-        print(f"✅ SQLite: {DB_PATH}")
+        print(f"✅ SQLite database ready: {DB_PATH}")
 
     return get_conn, init
 
@@ -346,6 +357,32 @@ def _sql_backend(get_conn, P: str = "?"):
                 return True
         return False
 
+    # ── Images ─────────────────────────────────────────────────
+    def track_image(filename, folder="uploads", note_id=None):
+        """Ghi nhận ảnh đã được persist vào DB."""
+        with get_conn() as conn:
+            conn.execute(
+                f"INSERT OR REPLACE INTO images (filename, folder, note_id, created_at)"
+                f" VALUES ({P},{P},{P},{P})",
+                (filename, folder, str(note_id) if note_id else None, _now())
+            )
+
+    def untrack_image(filename):
+        """Xóa record ảnh khỏi DB."""
+        with get_conn() as conn:
+            conn.execute(f"DELETE FROM images WHERE filename = {P}", (filename,))
+
+    def get_tracked_images(note_id=None):
+        """Lấy danh sách ảnh đã được track. Nếu note_id thì lọc theo note."""
+        with get_conn() as conn:
+            if note_id:
+                rows = conn.execute(
+                    f"SELECT * FROM images WHERE note_id = {P}", (str(note_id),)
+                ).fetchall()
+            else:
+                rows = conn.execute("SELECT * FROM images").fetchall()
+        return [dict(r) for r in rows]
+
     return dict(
         get_notes=get_notes, get_note=get_note,
         create_note=create_note, update_note=update_note, delete_note=delete_note,
@@ -355,6 +392,8 @@ def _sql_backend(get_conn, P: str = "?"):
         create_user=create_user, update_password=update_password,
         update_last_login=update_last_login,
         save_otp=save_otp, verify_otp=verify_otp,
+        track_image=track_image, untrack_image=untrack_image,
+        get_tracked_images=get_tracked_images,
     )
 
 
@@ -421,8 +460,26 @@ def _postgres_backend():
                     expires_at TEXT NOT NULL,
                     used       INTEGER DEFAULT 0
                 );
+                CREATE TABLE IF NOT EXISTS images (
+                    id         SERIAL PRIMARY KEY,
+                    filename   TEXT UNIQUE NOT NULL,
+                    folder     TEXT NOT NULL DEFAULT 'uploads',
+                    note_id    TEXT,
+                    created_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_images_note ON images(note_id);
             """)
-        print(f"✅ PostgreSQL: {DATABASE_URL.split('@')[-1]}")
+
+        # === MIGRATION: Thêm cột note_id nếu chưa có ===
+        try:
+            with get_conn() as conn:
+                conn.execute("ALTER TABLE images ADD COLUMN IF NOT EXISTS note_id TEXT")
+                print("  ↳ Migrated: images.note_id added (PostgreSQL)")
+        except Exception as e:
+            if "already exists" not in str(e).lower():
+                print(f"  ↳ PostgreSQL migration note_id skipped: {e}")
+
+        print(f"✅ PostgreSQL: {DATABASE_URL.split('@')[-1] if '@' in DATABASE_URL else DATABASE_URL}")
 
     return get_conn, init
 
@@ -498,8 +555,26 @@ def _mysql_backend():
                     expires_at TEXT NOT NULL,
                     used       TINYINT DEFAULT 0
                 )""",
+                """CREATE TABLE IF NOT EXISTS images (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    filename   VARCHAR(300) UNIQUE NOT NULL,
+                    folder     VARCHAR(50)  NOT NULL DEFAULT 'uploads',
+                    note_id    VARCHAR(100),
+                    created_at TEXT,
+                    INDEX idx_images_note (note_id)
+                )""",
             ]:
                 conn.execute(ddl)
+
+        # === MIGRATION: Thêm cột note_id nếu chưa có ===
+        try:
+            with get_conn() as conn:
+                conn.execute("ALTER TABLE images ADD COLUMN IF NOT EXISTS note_id VARCHAR(100)")
+                print("  ↳ Migrated: images.note_id added (MySQL)")
+        except Exception as e:
+            if "duplicate column" not in str(e).lower():
+                print(f"  ↳ MySQL migration note_id skipped: {e}")
+
         print(f"✅ MySQL: {parsed.hostname}/{parsed.path.lstrip('/')}")
 
     return get_conn, init
@@ -514,11 +589,15 @@ def _mongo_backend():
     from bson import ObjectId
 
     client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+    # Ping để kiểm tra connection ngay lập tức
+    client.admin.command("ping")
+
     mdb    = client[MONGO_DB]
     users  = mdb["users"]
     topics = mdb["topics"]
     notes  = mdb["notes"]
     otps   = mdb["otp_tokens"]
+    images = mdb["images"]
 
     def init():
         users.create_index("username",  unique=True)
@@ -528,7 +607,9 @@ def _mongo_backend():
         notes.create_index("topic_id")
         notes.create_index([("updated_at", DESCENDING)])
         otps.create_index("username")
-        print(f"✅ MongoDB: {MONGO_URI.split('@')[-1]} / {MONGO_DB}")
+        images.create_index("filename", unique=True)
+        images.create_index("note_id")
+        print(f"✅ MongoDB: {MONGO_URI.split('@')[-1] if '@' in MONGO_URI else MONGO_URI} / {MONGO_DB}")
 
     def _note(doc):
         if not doc:
@@ -669,6 +750,26 @@ def _mongo_backend():
             return True
         return False
 
+    # ── Images (MongoDB) ───────────────────────────────────────
+    def track_image(filename, folder="uploads", note_id=None):
+        images.update_one(
+            {"filename": filename},
+            {"$set": {
+                "filename":   filename,
+                "folder":     folder,
+                "note_id":    str(note_id) if note_id else None,
+                "created_at": _now(),
+            }},
+            upsert=True,
+        )
+
+    def untrack_image(filename):
+        images.delete_one({"filename": filename})
+
+    def get_tracked_images(note_id=None):
+        filt = {"note_id": str(note_id)} if note_id else {}
+        return list(images.find(filt, {"_id": 0}))
+
     return init, dict(
         get_notes=get_notes, get_note=get_note,
         create_note=create_note, update_note=update_note, delete_note=delete_note,
@@ -678,6 +779,8 @@ def _mongo_backend():
         create_user=create_user, update_password=update_password,
         update_last_login=update_last_login,
         save_otp=save_otp, verify_otp=verify_otp,
+        track_image=track_image, untrack_image=untrack_image,
+        get_tracked_images=get_tracked_images,
     )
 
 
@@ -687,10 +790,21 @@ def _mongo_backend():
 
 class Database:
     def __init__(self):
+        # ── MongoDB: thử connect, nếu fail thì fallback SQLite ──
         if USE_MONGO:
-            init_fn, self._fns = _mongo_backend()
-            init_fn()
-            self._backend = "mongodb"
+            try:
+                init_fn, self._fns = _mongo_backend()
+                init_fn()
+                self._backend = "mongodb"
+                # Đồng bộ dữ liệu từ SQLite/JSON nếu Mongo đang rỗng
+                self._sync_from_sql_if_empty()
+            except Exception as e:
+                print(f"⚠️  MongoDB connect thất bại ({e}), fallback → SQLite")
+                get_conn, init_fn = _sqlite_backend()
+                init_fn()
+                self._fns    = _sql_backend(get_conn, P="?")
+                self._backend = "sqlite"
+                self._migrate_json_if_needed(get_conn, "?")
 
         elif USE_POSTGRES:
             get_conn, init_fn = _postgres_backend()
@@ -713,6 +827,102 @@ class Database:
             self._backend = "sqlite"
             self._migrate_json_if_needed(get_conn, "?")
 
+    # ── Sync SQLite → MongoDB khi Mongo rỗng ─────────────────────
+    def _sync_from_sql_if_empty(self):
+        """
+        Nếu MongoDB đang rỗng (0 notes) nhưng SQLite có dữ liệu,
+        đổ toàn bộ dữ liệu từ SQLite sang MongoDB.
+        Gọi 1 lần duy nhất lúc khởi động khi dùng MongoDB.
+        """
+        mongo_notes = self._fns["get_notes"]()
+        if mongo_notes:
+            return  # Mongo đã có data → không cần sync
+
+        # Kiểm tra SQLite có data không
+        if not DB_PATH.exists():
+            # Thử đọc từ JSON
+            self._sync_from_json_if_empty()
+            return
+
+        try:
+            import sqlite3
+            conn = sqlite3.connect(DB_PATH)
+            conn.row_factory = sqlite3.Row
+            count = conn.execute("SELECT COUNT(*) as c FROM notes").fetchone()["c"]
+            if count == 0:
+                conn.close()
+                self._sync_from_json_if_empty()
+                return
+
+            print(f"📦 Syncing SQLite ({count} notes) → MongoDB…")
+
+            # Đọc topics
+            sql_topics = [dict(r) for r in conn.execute("SELECT * FROM topics").fetchall()]
+            # Đọc notes
+            sql_notes  = [dict(r) for r in conn.execute("SELECT * FROM notes").fetchall()]
+            # Đọc users (ngoại trừ password không sync nếu đã có trong Mongo)
+            sql_users  = [dict(r) for r in conn.execute("SELECT * FROM users").fetchall()]
+            conn.close()
+
+            # Map topic id cũ → id mới trong Mongo
+            topic_id_map = {}
+            create_topic = self._fns["create_topic"]
+            get_topic_by_name = self._fns["get_topic_by_name"]
+
+            for t in sql_topics:
+                existing = get_topic_by_name(t["name"], owner_id=t.get("owner_id"))
+                if existing:
+                    topic_id_map[str(t["id"])] = existing["id"]
+                else:
+                    new_t = create_topic(
+                        t["name"],
+                        t.get("color", "#4fffb0"),
+                        t.get("owner_id", "__shared__"),
+                    )
+                    topic_id_map[str(t["id"])] = new_t["id"]
+
+            # Sync notes
+            create_note = self._fns["create_note"]
+            for n in sql_notes:
+                old_topic_id = str(n["topic_id"]) if n.get("topic_id") else None
+                new_topic_id = topic_id_map.get(old_topic_id) if old_topic_id else None
+                create_note(
+                    n["question"], n["content"],
+                    new_topic_id,
+                    json.loads(n.get("tags") or "[]"),
+                    n.get("owner_id", "__shared__"),
+                )
+
+            # Sync users
+            get_user    = self._fns["get_user"]
+            create_user = self._fns["create_user"]
+            for u in sql_users:
+                if not get_user(u["username"]):
+                    create_user(u["username"], u["email"], u["password"], u.get("role", "user"))
+
+            print(f"✅ Sync hoàn tất: {len(sql_notes)} notes, {len(sql_topics)} topics → MongoDB")
+
+        except Exception as e:
+            print(f"⚠️  Sync SQLite → MongoDB thất bại: {e}")
+
+    def _sync_from_json_if_empty(self):
+        """Đổ dữ liệu từ notes.json vào MongoDB nếu Mongo đang rỗng."""
+        if not JSON_PATH.exists():
+            return
+        try:
+            with open(JSON_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            notes_data  = data.get("notes", [])
+            topics_data = data.get("topics", [])
+            if not notes_data:
+                return
+            print(f"📦 Syncing JSON ({len(notes_data)} notes) → MongoDB…")
+            added = self.import_bulk(topics_data, notes_data)
+            print(f"✅ Sync JSON → MongoDB: {added} notes")
+        except Exception as e:
+            print(f"⚠️  Sync JSON → MongoDB thất bại: {e}")
+
+    # ── Migrate JSON → SQL (cho SQLite/PG/MySQL) ──────────────────
     def _migrate_json_if_needed(self, get_conn, P):
         if not JSON_PATH.exists():
             return

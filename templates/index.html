@@ -7,6 +7,15 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Sora:wght@300;400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/style.css">
+  <script>
+    // Áp dụng theme ngay lập tức để tránh flash khi reload trang
+    if (localStorage.getItem("devnotes-theme") === "light") {
+      document.documentElement.style.cssText = "background:#f5f6f8";
+      document.addEventListener("DOMContentLoaded", function() {
+        document.body.classList.add("light-mode");
+      });
+    }
+  </script>
 </head>
 <body>
 
@@ -19,6 +28,11 @@
     <button class="btn btn-ghost btn-sm" id="btnExport">⬇ Export JSON</button>
     <button class="btn btn-ghost btn-sm" id="btnExportPdf">📄 Export PDF</button>
     <button class="btn btn-accent"       id="btnAdd">+ Thêm Note</button>
+    <!-- Theme toggle -->
+    <div class="theme-toggle" id="themeToggle" title="Đổi giao diện">
+      <button class="th-opt" id="themeDark">🌙 Tối</button>
+      <button class="th-opt" id="themeLight">☀️ Sáng</button>
+    </div>
     <!-- User menu -->
     <div class="user-menu-wrap" id="userMenuWrap">
       <button class="btn btn-ghost btn-sm" id="btnUserMenu" title="Tài khoản">⚙️</button>

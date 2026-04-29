@@ -25,7 +25,7 @@ python app.py
 http://localhost:5000
 ```
 
-Lần đầu chạy sẽ tự seed dữ liệu mẫu K8s vào `data/notes.json`.
+Lần đầu chạy sẽ tự seed dữ liệu mẫu vào `data/notes.json`.
 
 ---
 
@@ -33,52 +33,36 @@ Lần đầu chạy sẽ tự seed dữ liệu mẫu K8s vào `data/notes.json`.
 
 ```
 devnotes/
-├── app.py               # Flask server + REST API
-├── seed.py              # Script tạo dữ liệu mẫu
-├── requirements.txt
-├── data/
-│   └── notes.json       # Toàn bộ dữ liệu (tự tạo)
+├── app.py
 ├── templates/
-│   └── index.html       # HTML layout
-└── static/
-    ├── css/
-    │   └── style.css    # Giao diện
-    └── js/
-        ├── api.js       # Gọi Flask API
-        ├── ui.js        # Render helpers
-        └── app.js       # Logic chính
+├── static/
+├── traefik/
+├── config/
+│   └── __init__.py
+├── db/
+│   ├── __init__.py
+│   ├── _shared.py
+│   ├── sqlite.py
+│   ├── postgres.py
+│   └── mongo.py
+├── routes/
+│   ├── auth.py
+│   ├── notes.py
+│   ├── topics.py
+│   ├── images.py
+│   └── data.py
+├── services/
+│   ├── telegram.py
+│   └── image_cache.py
+└── utils/
+    └── auth_utils.py
 ```
 
 ---
 
-## 🔌 REST API
+## Architecture
 
-| Method | Endpoint             | Mô tả                   |
-|--------|----------------------|-------------------------|
-| GET    | `/api/notes`         | Lấy notes (hỗ trợ `?q=` và `?topic=`) |
-| POST   | `/api/notes`         | Tạo note mới            |
-| PUT    | `/api/notes/<id>`    | Cập nhật note           |
-| DELETE | `/api/notes/<id>`    | Xóa note                |
-| GET    | `/api/topics`        | Lấy danh sách chủ đề   |
-| POST   | `/api/topics`        | Tạo chủ đề mới          |
-| DELETE | `/api/topics/<id>`   | Xóa chủ đề              |
-| GET    | `/api/export`        | Export toàn bộ JSON     |
-| POST   | `/api/import`        | Import JSON             |
-
----
-
-## 📥 Format Import JSON
-
-```json
-[
-  {
-    "question": "VM và k8s khác nhau như nào?",
-    "topic": "Kubernetes & DevOps",
-    "tags": ["k8s", "vm", "devops"],
-    "content": "Nội dung trả lời..."
-  }
-]
-```
+![art](static/image/fe_be_architecture_devnotes.svg) 
 
 ---
 

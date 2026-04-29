@@ -1182,3 +1182,36 @@ const App = (() => {
   document.addEventListener("DOMContentLoaded", init);
 
 })();
+
+// ── Theme Toggle ─────────────────────────────────────────────────
+(function initTheme() {
+  const saved = localStorage.getItem("devnotes-theme") || "dark";
+  applyTheme(saved);
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const btnDark  = document.getElementById("themeDark");
+    const btnLight = document.getElementById("themeLight");
+    if (btnDark)  btnDark.addEventListener("click",  () => applyTheme("dark"));
+    if (btnLight) btnLight.addEventListener("click", () => applyTheme("light"));
+    updateToggleUI(saved);
+  });
+
+  function applyTheme(theme) {
+    const isDark = theme === "dark";
+    document.body.classList.toggle("light-mode", !isDark);
+    localStorage.setItem("devnotes-theme", theme);
+    updateToggleUI(theme);
+  }
+
+  function updateToggleUI(theme) {
+    const btnDark  = document.getElementById("themeDark");
+    const btnLight = document.getElementById("themeLight");
+    if (!btnDark || !btnLight) return;
+    btnDark.classList.toggle("active",  theme === "dark");
+    btnLight.classList.toggle("active", theme === "light");
+  }
+
+  // Áp dụng ngay trước khi DOM load xong để tránh flash trắng
+  const earlyTheme = localStorage.getItem("devnotes-theme") || "dark";
+  if (earlyTheme === "light") document.documentElement.classList.add("light-mode-early");
+})();

@@ -111,22 +111,35 @@ def commit_images(old_content: str | None, new_content: str, note_id) -> str:
     for url in _extract_temp_urls(new_content):
         filename = url.split("/")[-1]
         filepath = TEMP_DIR / filename
-        if not filepath.exists():
-            # File đã bị TTL xóa hoặc chưa từng tồn tại → để URL gốc, FE sẽ thấy 404
-            continue
-        try:
-            data = filepath.read_bytes()
-        except Exception as e:
-            print(f"[commit_images] Read FAILED for {filename}: {e}")
+
+        # File còn trên đĩa → đọc bytes và upsert vào DB.
+        if filepath.exists():
+            try:
+                data = filepath.read_bytes()
+            except Exception as e:
+                print(f"[commit_images] Read FAILED for {filename}: {e}")
+                continue
+
+            mime = _mime_from_filename(filename)
+            try:
+                image_id = db.upsert_image_bytes(filename, data, mime, note_id=note_id)
+            except Exception as e:
+                print(f"[commit_images] DB upsert FAILED for {filename}: {e}")
+                continue
+            rewrites[url] = f"/img/{image_id}"
             continue
 
-        mime = _mime_from_filename(filename)
+        # File đã mất khỏi temp/ — nhưng nếu DB đã có row cho filename này
+        # (vd. commit trước đó thành công, sau đó TTL xóa file), vẫn rewrite
+        # URL → /img/<id> để FE không stuck ở /temp/<f> 404 mãi mãi.
         try:
-            image_id = db.upsert_image_bytes(filename, data, mime, note_id=note_id)
+            existing_id = db.get_image_id_by_filename(filename)
         except Exception as e:
-            print(f"[commit_images] DB upsert FAILED for {filename}: {e}")
-            continue
-        rewrites[url] = f"/img/{image_id}"
+            print(f"[commit_images] DB lookup FAILED for {filename}: {e}")
+            existing_id = None
+        if existing_id is not None:
+            rewrites[url] = f"/img/{existing_id}"
+        # else: file mất + DB chưa có → ảnh đã mất hẳn, để URL gốc (FE 404)
 
     rewritten = new_content
     for old_url, new_url in rewrites.items():

@@ -91,11 +91,14 @@ def init():
         ]:
             conn.execute(ddl)
 
-    # Migration: thêm các cột nếu chưa có
+    # Migration: thêm các cột nếu chưa có (handle DB cũ có schema khác)
     for col, definition in [
-        ("note_id", "VARCHAR(100)"),
-        ("data",    "LONGBLOB"),
-        ("mime",    "VARCHAR(100)"),
+        ("filename",   "VARCHAR(300)"),
+        ("folder",     "VARCHAR(50) NOT NULL DEFAULT 'uploads'"),
+        ("note_id",    "VARCHAR(100)"),
+        ("data",       "LONGBLOB"),
+        ("mime",       "VARCHAR(100)"),
+        ("created_at", "TEXT"),
     ]:
         try:
             with get_conn() as conn:
@@ -104,6 +107,19 @@ def init():
         except Exception as e:
             if "duplicate column" not in str(e).lower():
                 print(f"  ↳ MySQL migration skipped ({col}): {e}")
+    # UNIQUE INDEX trên filename (MySQL không hỗ trợ partial index, nên
+    # chỉ tạo nếu chưa có. Nếu DB legacy có row filename NULL thì OK,
+    # NULL không bị unique constraint reject).
+    try:
+        with get_conn() as conn:
+            conn.execute("CREATE UNIQUE INDEX idx_images_filename ON images(filename)")
+            print("  ↳ Migrated: UNIQUE idx_images_filename (MySQL)")
+    except Exception as e:
+        # MySQL không có IF NOT EXISTS cho CREATE INDEX trước 8.0.
+        # Nếu đã tồn tại / duplicate key, bỏ qua êm.
+        msg = str(e).lower()
+        if "duplicate" not in msg and "exists" not in msg:
+            print(f"  ↳ MySQL UNIQUE index trên images.filename skipped: {e}")
 
     print(f"✅ MySQL: {_parsed.hostname}/{_parsed.path.lstrip('/')}")
 

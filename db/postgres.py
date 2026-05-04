@@ -83,11 +83,14 @@ def init():
             CREATE INDEX IF NOT EXISTS idx_images_note ON images(note_id);
         """)
 
-    # Migration: thêm các cột nếu chưa có
+    # Migration: thêm các cột nếu chưa có (handle DB cũ có schema khác)
     for col, definition in [
-        ("note_id", "TEXT"),
-        ("data",    "BYTEA"),
-        ("mime",    "TEXT"),
+        ("filename",   "TEXT"),
+        ("folder",     "TEXT NOT NULL DEFAULT 'uploads'"),
+        ("note_id",    "TEXT"),
+        ("data",       "BYTEA"),
+        ("mime",       "TEXT"),
+        ("created_at", "TEXT"),
     ]:
         try:
             with get_conn() as conn:
@@ -96,6 +99,15 @@ def init():
         except Exception as e:
             if "already exists" not in str(e).lower():
                 print(f"  ↳ PostgreSQL migration skipped ({col}): {e}")
+    # UNIQUE INDEX trên filename (partial — bỏ qua NULL legacy)
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_images_filename"
+                " ON images(filename) WHERE filename IS NOT NULL"
+            )
+    except Exception as e:
+        print(f"  ↳ PostgreSQL UNIQUE index trên images.filename skipped: {e}")
 
     db_host = settings.DATABASE_URL.split("@")[-1] if "@" in settings.DATABASE_URL else settings.DATABASE_URL
     print(f"✅ PostgreSQL: {db_host}")

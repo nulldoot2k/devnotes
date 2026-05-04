@@ -209,6 +209,15 @@ def build_sql_backend(get_conn, P: str = "?"):
         return False
 
     # ── Images ─────────────────────────────────────────────────────
+    #
+    # Lifecycle:
+    #   1. Upload (đang edit): file vào temp/, KHÔNG tạo row trong DB.
+    #   2. Save note (commit_images): đọc bytes từ temp/ → upsert_image_bytes()
+    #      → row có filename + data + mime + note_id, route /img/<id> phục vụ.
+    #   3. Edit note + xóa ảnh: delete_image_by_id() khi /img/<id> biến mất khỏi
+    #      content.
+    #   Các API track_image / untrack_image / get_tracked_images giữ lại cho
+    #   tương thích ngược (legacy & cleanup_expired_temp).
 
     def track_image(filename, folder="uploads", note_id=None):
         with get_conn() as conn:
@@ -226,11 +235,74 @@ def build_sql_backend(get_conn, P: str = "?"):
         with get_conn() as conn:
             if note_id:
                 rows = conn.execute(
-                    f"SELECT * FROM images WHERE note_id = {P}", (str(note_id),)
+                    f"SELECT id, filename, folder, note_id, mime, created_at"
+                    f" FROM images WHERE note_id = {P}", (str(note_id),)
                 ).fetchall()
             else:
-                rows = conn.execute("SELECT * FROM images").fetchall()
+                rows = conn.execute(
+                    "SELECT id, filename, folder, note_id, mime, created_at FROM images"
+                ).fetchall()
         return [dict(r) for r in rows]
+
+    def upsert_image_bytes(filename, data: bytes, mime: str, note_id=None) -> int:
+        """
+        Persist image bytes vào DB (idempotent theo filename).
+        Trả về id của row.
+        """
+        nid = str(note_id) if note_id else None
+        with get_conn() as conn:
+            existing = conn.execute(
+                f"SELECT id FROM images WHERE filename = {P}", (filename,)
+            ).fetchone()
+            if existing:
+                row_id = existing["id"] if isinstance(existing, dict) else existing[0]
+                conn.execute(
+                    f"UPDATE images SET data = {P}, mime = {P}, note_id = {P}"
+                    f" WHERE id = {P}",
+                    (data, mime, nid, row_id),
+                )
+                return int(row_id)
+            cur = conn.execute(
+                f"INSERT INTO images (filename, folder, note_id, data, mime, created_at)"
+                f" VALUES ({P},{P},{P},{P},{P},{P})",
+                (filename, "db", nid, data, mime, _now()),
+            )
+            row_id = cur.lastrowid if hasattr(cur, "lastrowid") and cur.lastrowid else None
+            if not row_id:
+                row = conn.execute(
+                    f"SELECT id FROM images WHERE filename = {P}", (filename,)
+                ).fetchone()
+                row_id = row["id"] if isinstance(row, dict) else row[0]
+            return int(row_id)
+
+    def get_image_by_id(image_id):
+        try:
+            iid = int(image_id)
+        except (TypeError, ValueError):
+            return None
+        with get_conn() as conn:
+            row = conn.execute(
+                f"SELECT data, mime, filename FROM images WHERE id = {P}", (iid,)
+            ).fetchone()
+        if not row:
+            return None
+        r = dict(row)
+        if r.get("data") is None:
+            return None
+        return {
+            "data":     bytes(r["data"]),
+            "mime":     r.get("mime") or "application/octet-stream",
+            "filename": r.get("filename"),
+        }
+
+    def delete_image_by_id(image_id):
+        try:
+            iid = int(image_id)
+        except (TypeError, ValueError):
+            return False
+        with get_conn() as conn:
+            conn.execute(f"DELETE FROM images WHERE id = {P}", (iid,))
+        return True
 
     return dict(
         get_notes=get_notes, get_note=get_note,
@@ -243,4 +315,7 @@ def build_sql_backend(get_conn, P: str = "?"):
         save_otp=save_otp, verify_otp=verify_otp,
         track_image=track_image, untrack_image=untrack_image,
         get_tracked_images=get_tracked_images,
+        upsert_image_bytes=upsert_image_bytes,
+        get_image_by_id=get_image_by_id,
+        delete_image_by_id=delete_image_by_id,
     )

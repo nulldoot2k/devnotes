@@ -77,6 +77,8 @@ def init():
                 filename   TEXT UNIQUE NOT NULL,
                 folder     TEXT NOT NULL DEFAULT 'uploads',
                 note_id    TEXT,
+                data       BLOB,
+                mime       TEXT,
                 created_at TEXT DEFAULT (datetime('now'))
             );
         """)
@@ -87,6 +89,8 @@ def init():
             ("notes",  "owner_id", "TEXT NOT NULL DEFAULT '__shared__'"),
             ("topics", "owner_id", "TEXT NOT NULL DEFAULT '__shared__'"),
             ("images", "note_id",  "TEXT"),
+            ("images", "data",     "BLOB"),
+            ("images", "mime",     "TEXT"),
         ]
         for table, col, definition in migrations:
             cols = _existing_columns(conn, table)

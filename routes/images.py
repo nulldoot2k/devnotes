@@ -1,12 +1,13 @@
 """
 routes/images.py — Blueprint /api/images/*
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Upload ảnh vào static/temp/ (cache tạm).
-Ảnh chỉ được move sang static/uploads/ khi note được Save.
+Upload ảnh vào temp/ (cache filesystem khi đang edit).
+Khi note được Save, services.image_cache.commit_images sẽ đọc bytes,
+upsert vào DB và rewrite URL trong content thành /img/<id>.
 
 Endpoints:
-  POST /api/images/upload   — nhận file, lưu temp, trả URL tạm
-  POST /api/images/discard  — xóa danh sách URL temp (khi cancel)
+  POST /api/images/upload   — nhận file, lưu vào temp/, trả URL /temp/<filename>
+  POST /api/images/discard  — xóa file temp được tham chiếu (khi cancel)
 """
 
 import os
@@ -35,11 +36,11 @@ MAX_SIZE_BYTES = int(os.getenv("MAX_IMAGE_BYTES", str(10 * 1024 * 1024)))
 def upload_image():
     """
     Nhận file ảnh từ multipart/form-data (field name: "file").
-    Lưu vào static/temp/ (cache tạm).
-    Trả về { "url": "/static/temp/<filename>", "temp": true }
+    Lưu vào temp/ (cache filesystem trong khi user đang edit).
+    Trả về { "url": "/temp/<filename>", "temp": true }
 
-    Ảnh chỉ thực sự được persist khi note được Save
-    (xem image_cache.commit_images).
+    Ảnh chỉ được persist vào DB khi note được Save
+    (xem services.image_cache.commit_images, URL sẽ rewrite sang /img/<id>).
     """
     if "file" not in request.files:
         return jsonify({"error": "Không có file nào được gửi lên"}), 400

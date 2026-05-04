@@ -76,19 +76,26 @@ def init():
                 filename   TEXT UNIQUE NOT NULL,
                 folder     TEXT NOT NULL DEFAULT 'uploads',
                 note_id    TEXT,
+                data       BYTEA,
+                mime       TEXT,
                 created_at TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_images_note ON images(note_id);
         """)
 
-    # Migration: thêm note_id nếu chưa có
-    try:
-        with get_conn() as conn:
-            conn.execute("ALTER TABLE images ADD COLUMN IF NOT EXISTS note_id TEXT")
-            print("  ↳ Migrated: images.note_id added (PostgreSQL)")
-    except Exception as e:
-        if "already exists" not in str(e).lower():
-            print(f"  ↳ PostgreSQL migration skipped: {e}")
+    # Migration: thêm các cột nếu chưa có
+    for col, definition in [
+        ("note_id", "TEXT"),
+        ("data",    "BYTEA"),
+        ("mime",    "TEXT"),
+    ]:
+        try:
+            with get_conn() as conn:
+                conn.execute(f"ALTER TABLE images ADD COLUMN IF NOT EXISTS {col} {definition}")
+                print(f"  ↳ Migrated: images.{col} added (PostgreSQL)")
+        except Exception as e:
+            if "already exists" not in str(e).lower():
+                print(f"  ↳ PostgreSQL migration skipped ({col}): {e}")
 
     db_host = settings.DATABASE_URL.split("@")[-1] if "@" in settings.DATABASE_URL else settings.DATABASE_URL
     print(f"✅ PostgreSQL: {db_host}")

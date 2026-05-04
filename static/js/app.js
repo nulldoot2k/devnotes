@@ -141,7 +141,7 @@ const App = (() => {
     const ta = document.getElementById("fContent");
     if (!ta) return;
     const content = ta.value || "";
-    if (content.includes("/static/temp/")) {
+    if (content.includes("/temp/")) {
       API.discardImages(content).catch(() => {});
     }
   }
@@ -167,7 +167,7 @@ const App = (() => {
     if (!ta) return;
     const content = ta.value || "";
     // Chỉ gọi nếu có URL temp (tránh request thừa)
-    if (content.includes("/static/temp/")) {
+    if (content.includes("/temp/")) {
       API.discardImages(content).catch(() => {});
     }
   }

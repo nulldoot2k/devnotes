@@ -61,16 +61,21 @@ def create_note():
     db    = get_db()
     owner = _owner()
 
-    # 1. Lưu note trước để có note_id
+    # 1. Lưu note với content gốc (chứa /temp/<f>) để lấy note_id
     note = db.create_note(question, content, topic_id, tags, owner_id=owner)
 
-    # 2. Sau khi có note_id: track ảnh vào DB (ảnh vẫn nằm trong temp/)
-    #    old_content=None vì note mới, không có ảnh cũ nào cần xóa
-    commit_images(
+    # 2. Ingest ảnh vào DB và rewrite /temp/<f> → /img/<id>
+    new_content = commit_images(
         old_content=None,
         new_content=content,
         note_id=note["id"],
     )
+
+    # 3. Nếu URL được rewrite thì update lại note với content mới
+    if new_content != content:
+        updated = db.update_note(note["id"], content=new_content)
+        if updated:
+            note = updated
 
     return jsonify(note), 201
 
@@ -91,7 +96,9 @@ def update_note(note_id):
     if not old_note:
         return jsonify({"error": "Không tìm thấy note"}), 404
 
-    # 1. Update DB trước
+    effective_content = content if content is not None else old_note["content"]
+
+    # 1. Update DB trước với content gốc
     note = db.update_note(
         note_id,
         question=question,
@@ -102,14 +109,18 @@ def update_note(note_id):
     if note is None:
         return jsonify({"error": "Không tìm thấy note"}), 404
 
-    # 2. commit_images:
-    #    - Track ảnh mới thêm vào (gán note_id)
-    #    - Xóa file temp + untrack ảnh bị remove khỏi content
-    commit_images(
+    # 2. Ingest /temp/<f> → DB, rewrite URL, dọn /img/<id> đã bị remove
+    new_content = commit_images(
         old_content=old_note["content"],
-        new_content=content if content is not None else old_note["content"],
+        new_content=effective_content,
         note_id=note_id,
     )
+
+    # 3. Nếu content bị rewrite thì update lại
+    if new_content != effective_content:
+        updated = db.update_note(note_id, content=new_content)
+        if updated:
+            note = updated
 
     return jsonify(note)
 

@@ -83,20 +83,27 @@ def init():
                 filename   VARCHAR(300) UNIQUE NOT NULL,
                 folder     VARCHAR(50)  NOT NULL DEFAULT 'uploads',
                 note_id    VARCHAR(100),
+                data       LONGBLOB,
+                mime       VARCHAR(100),
                 created_at TEXT,
                 INDEX idx_images_note (note_id)
             )""",
         ]:
             conn.execute(ddl)
 
-    # Migration: thêm note_id nếu chưa có
-    try:
-        with get_conn() as conn:
-            conn.execute("ALTER TABLE images ADD COLUMN IF NOT EXISTS note_id VARCHAR(100)")
-            print("  ↳ Migrated: images.note_id added (MySQL)")
-    except Exception as e:
-        if "duplicate column" not in str(e).lower():
-            print(f"  ↳ MySQL migration skipped: {e}")
+    # Migration: thêm các cột nếu chưa có
+    for col, definition in [
+        ("note_id", "VARCHAR(100)"),
+        ("data",    "LONGBLOB"),
+        ("mime",    "VARCHAR(100)"),
+    ]:
+        try:
+            with get_conn() as conn:
+                conn.execute(f"ALTER TABLE images ADD COLUMN IF NOT EXISTS {col} {definition}")
+                print(f"  ↳ Migrated: images.{col} added (MySQL)")
+        except Exception as e:
+            if "duplicate column" not in str(e).lower():
+                print(f"  ↳ MySQL migration skipped ({col}): {e}")
 
     print(f"✅ MySQL: {_parsed.hostname}/{_parsed.path.lstrip('/')}")
 

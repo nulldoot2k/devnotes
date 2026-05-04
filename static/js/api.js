@@ -144,7 +144,7 @@ const API = (() => {
      * @param {string} content — nội dung markdown hiện tại trong textarea
      */
     discardImages(content) {
-      if (!content || !content.includes("/static/temp/")) return Promise.resolve();
+      if (!content || !content.includes("/temp/")) return Promise.resolve();
       return request("POST", "/api/images/discard", { content });
     },
   };

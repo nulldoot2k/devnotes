@@ -190,6 +190,7 @@ def create_backend():
         return False
 
     # ── Images ─────────────────────────────────────────────────────
+    # URL ngoài: /img/<24-char-ObjectId-hex>
 
     def track_image(filename, folder="uploads", note_id=None):
         images.update_one(
@@ -208,7 +209,62 @@ def create_backend():
 
     def get_tracked_images(note_id=None):
         filt = {"note_id": str(note_id)} if note_id else {}
-        return list(images.find(filt, {"_id": 0}))
+        return [
+            {
+                "id":         str(d["_id"]),
+                "filename":   d.get("filename"),
+                "folder":     d.get("folder"),
+                "note_id":    d.get("note_id"),
+                "mime":       d.get("mime"),
+                "created_at": d.get("created_at"),
+            }
+            for d in images.find(filt)
+        ]
+
+    def upsert_image_bytes(filename, data: bytes, mime: str, note_id=None) -> str:
+        from bson.binary import Binary
+        nid = str(note_id) if note_id else None
+        existing = images.find_one({"filename": filename})
+        if existing:
+            images.update_one(
+                {"_id": existing["_id"]},
+                {"$set": {
+                    "data":    Binary(data),
+                    "mime":    mime,
+                    "note_id": nid,
+                }},
+            )
+            return str(existing["_id"])
+        doc = {
+            "filename":   filename,
+            "folder":     "db",
+            "note_id":    nid,
+            "data":       Binary(data),
+            "mime":       mime,
+            "created_at": _now(),
+        }
+        return str(images.insert_one(doc).inserted_id)
+
+    def get_image_by_id(image_id):
+        try:
+            oid = ObjectId(str(image_id))
+        except Exception:
+            return None
+        d = images.find_one({"_id": oid})
+        if not d or d.get("data") is None:
+            return None
+        return {
+            "data":     bytes(d["data"]),
+            "mime":     d.get("mime") or "application/octet-stream",
+            "filename": d.get("filename"),
+        }
+
+    def delete_image_by_id(image_id):
+        try:
+            oid = ObjectId(str(image_id))
+        except Exception:
+            return False
+        return images.delete_one({"_id": oid}).deleted_count > 0
 
     return dict(
         get_notes=get_notes, get_note=get_note,
@@ -221,4 +277,7 @@ def create_backend():
         save_otp=save_otp, verify_otp=verify_otp,
         track_image=track_image, untrack_image=untrack_image,
         get_tracked_images=get_tracked_images,
+        upsert_image_bytes=upsert_image_bytes,
+        get_image_by_id=get_image_by_id,
+        delete_image_by_id=delete_image_by_id,
     )

@@ -11,7 +11,7 @@ load_dotenv()
 from datetime import timedelta
 from pathlib import Path
 
-from flask import Flask, render_template, request, jsonify, send_from_directory, abort
+from flask import Flask, render_template, request, jsonify, send_from_directory, abort, Response
 from flask_jwt_extended import JWTManager
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -75,11 +75,30 @@ def forgot_page():
 
 @app.route("/temp/<path:filename>")
 def serve_temp_image(filename):
+    """Phục vụ ảnh đang edit từ temp/ (cache filesystem). Sau Save, URL sẽ
+    được rewrite sang /img/<id> nên route này chỉ phục vụ giai đoạn editing."""
     if "/" in filename or "\\" in filename or ".." in filename:
         abort(400)
     if Path(filename).suffix.lower() not in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"}:
         abort(400)
     return send_from_directory(str(settings.TEMP_DIR), filename)
+
+
+@app.route("/img/<string:image_id>")
+def serve_db_image(image_id):
+    """Phục vụ ảnh đã commit từ DB (bytes + mime). Slug = primary key của
+    bảng images: integer cho SQL backend, ObjectId hex cho Mongo."""
+    # Cắt extension nếu có (vd. /img/42.png) — lookup chỉ cần phần slug
+    slug = image_id.split(".", 1)[0]
+    if not slug:
+        abort(400)
+    db  = get_db()
+    img = db.get_image_by_id(slug)
+    if not img:
+        abort(404)
+    resp = Response(img["data"], content_type=img.get("mime") or "application/octet-stream")
+    resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return resp
 
 @app.route("/api/image-proxy")
 def image_proxy():
@@ -116,6 +135,35 @@ def startup_cleanup():
     except Exception as e:
         print(f"⚠️  Startup cleanup lỗi: {e}")
 
+
+def migrate_legacy_temp_urls():
+    """
+    One-shot migration: các note đã lưu trước đây tham chiếu /temp/<filename>
+    trong content. Đọc bytes từ temp/ → DB → rewrite content thành /img/<id>.
+    File bị mất trên đĩa thì giữ nguyên URL (sẽ 404, không crash).
+    """
+    try:
+        from services.image_cache import commit_images, _extract_temp_urls
+        db = get_db()
+        notes = db.get_notes()
+        rewritten = 0
+        for n in notes:
+            content = n.get("content") or ""
+            if not _extract_temp_urls(content):
+                continue
+            new_content = commit_images(
+                old_content=None,
+                new_content=content,
+                note_id=n["id"],
+            )
+            if new_content != content:
+                db.update_note(n["id"], content=new_content)
+                rewritten += 1
+        if rewritten:
+            print(f"📦 Migrated {rewritten} note(s): /temp/* → /img/<id>")
+    except Exception as e:
+        print(f"⚠️  Legacy /temp migration lỗi: {e}")
+
 # ── Main ──────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -124,6 +172,7 @@ if __name__ == "__main__":
     if not db.get_notes():
         from seed import seed_data
         seed_data()
+    migrate_legacy_temp_urls()
     startup_cleanup()
     print(f"🚀 DevNotes chạy tại: http://localhost:{settings.PORT}")
     app.run(debug=settings.DEBUG, port=settings.PORT, host="0.0.0.0")

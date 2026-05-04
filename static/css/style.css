@@ -103,8 +103,9 @@ body.light-mode .tag {
   border-color: #d4d0f7;
 }
 
-/* ── Topic-colored tags (use --tc custom property) ── */
-.topic-tag {
+/* ── Topic-colored tags (use --tc custom property) ──
+   Selector is .tag.topic-tag so it wins over the later .tag rule */
+.tag.topic-tag {
   color: var(--tc);
   background: color-mix(in srgb, var(--tc) 7%, transparent);
   border-color: color-mix(in srgb, var(--tc) 13%, transparent);
@@ -117,7 +118,7 @@ body.light-mode .tag {
 }
 
 /* Light mode: darken topic colors for readability on white bg */
-body.light-mode .topic-tag {
+body.light-mode .tag.topic-tag {
   color: color-mix(in srgb, var(--tc) 55%, black);
   background: color-mix(in srgb, var(--tc) 12%, white);
   border-color: color-mix(in srgb, var(--tc) 25%, white);

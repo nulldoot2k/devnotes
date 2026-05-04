@@ -369,7 +369,7 @@ const App = (() => {
     if (topic) {
       metaHTML += `
         <span class="detail-topic-badge" 
-              style="background:${topic.color}18;color:${topic.color};border:1px solid ${topic.color}33">
+              style="--tc:${topic.color}">
           ${UI.esc(topic.name)}
         </span>`;
     }
@@ -624,7 +624,7 @@ const App = (() => {
       if (topic) {
         metaHTML += `
           <span class="detail-topic-badge" 
-                style="background:${topic.color}18;color:${topic.color};border:1px solid ${topic.color}33;">
+                style="--tc:${topic.color}">
             ${UI.esc(topic.name)}
           </span>`;
       }

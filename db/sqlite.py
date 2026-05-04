@@ -83,14 +83,24 @@ def init():
             );
         """)
 
-        # Migration an toàn: thêm cột nếu thiếu
+        # Migration an toàn: thêm cột nếu thiếu.
+        #
+        # SQLite ALTER TABLE chỉ cho thêm cột nullable / không có UNIQUE
+        # / PRIMARY KEY. Vì vậy cột `filename` thêm dạng nullable, sau đó
+        # áp UNIQUE thông qua CREATE UNIQUE INDEX (xem dưới).
         migrations = [
-            ("users",  "role",     "TEXT NOT NULL DEFAULT 'user'"),
-            ("notes",  "owner_id", "TEXT NOT NULL DEFAULT '__shared__'"),
-            ("topics", "owner_id", "TEXT NOT NULL DEFAULT '__shared__'"),
-            ("images", "note_id",  "TEXT"),
-            ("images", "data",     "BLOB"),
-            ("images", "mime",     "TEXT"),
+            ("users",  "role",       "TEXT NOT NULL DEFAULT 'user'"),
+            ("notes",  "owner_id",   "TEXT NOT NULL DEFAULT '__shared__'"),
+            ("topics", "owner_id",   "TEXT NOT NULL DEFAULT '__shared__'"),
+            # SQLite ALTER TABLE không cho non-constant default (datetime('now')).
+            # Cột `created_at` thêm không default; row mới chỉ phụ thuộc vào
+            # CREATE TABLE statement ở trên (đã có default datetime('now')).
+            ("images", "filename",   "TEXT"),
+            ("images", "folder",     "TEXT NOT NULL DEFAULT 'uploads'"),
+            ("images", "note_id",    "TEXT"),
+            ("images", "data",       "BLOB"),
+            ("images", "mime",       "TEXT"),
+            ("images", "created_at", "TEXT"),
         ]
         for table, col, definition in migrations:
             cols = _existing_columns(conn, table)
@@ -129,6 +139,17 @@ def init():
             CREATE INDEX IF NOT EXISTS idx_topics_owner ON topics(owner_id);
             CREATE INDEX IF NOT EXISTS idx_images_note  ON images(note_id);
         """)
+
+        # Áp UNIQUE cho images.filename qua INDEX (vì ALTER TABLE không
+        # cho thêm UNIQUE inline). Dùng partial index để không reject
+        # các row legacy có filename = NULL.
+        try:
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_images_filename"
+                " ON images(filename) WHERE filename IS NOT NULL"
+            )
+        except sqlite3.OperationalError as e:
+            print(f"  ↳ Cảnh báo: không tạo được UNIQUE INDEX cho images.filename: {e}")
 
     print(f"✅ SQLite database ready: {DB_PATH}")
 

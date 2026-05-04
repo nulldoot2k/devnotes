@@ -304,6 +304,23 @@ def build_sql_backend(get_conn, P: str = "?"):
             conn.execute(f"DELETE FROM images WHERE id = {P}", (iid,))
         return True
 
+    def get_image_id_by_filename(filename):
+        """Trả về id của row có filename khớp (kể cả row chỉ có metadata, data NULL).
+        Dùng để rewrite /temp/<f> → /img/<id> khi file đĩa đã mất nhưng row vẫn còn."""
+        if not filename:
+            return None
+        with get_conn() as conn:
+            row = conn.execute(
+                f"SELECT id FROM images WHERE filename = {P}", (filename,)
+            ).fetchone()
+        if not row:
+            return None
+        rid = row["id"] if isinstance(row, dict) else row[0]
+        try:
+            return int(rid)
+        except (TypeError, ValueError):
+            return rid
+
     return dict(
         get_notes=get_notes, get_note=get_note,
         create_note=create_note, update_note=update_note, delete_note=delete_note,
@@ -317,5 +334,6 @@ def build_sql_backend(get_conn, P: str = "?"):
         get_tracked_images=get_tracked_images,
         upsert_image_bytes=upsert_image_bytes,
         get_image_by_id=get_image_by_id,
+        get_image_id_by_filename=get_image_id_by_filename,
         delete_image_by_id=delete_image_by_id,
     )

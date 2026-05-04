@@ -7,9 +7,35 @@ from flask_jwt_extended import get_jwt_identity
 
 from db          import get_db
 from utils.auth_utils import jwt_required_api
-from services.image_cache import commit_images
+from services.image_cache import commit_images, _extract_temp_urls
 
 notes_bp = Blueprint("notes", __name__, url_prefix="/api/notes")
+
+
+def _lazy_migrate(db, notes):
+    """Lazy migration: với mỗi note còn /temp/<f> ref, ingest bytes vào DB
+    và rewrite content thành /img/<id>. Idempotent — nếu file đã bị TTL xóa,
+    URL giữ nguyên (không crash). Chạy in-line để bảo vệ trường hợp người
+    dùng tạo note với code cũ rồi pull code mới mà chưa restart."""
+    for n in notes:
+        content = n.get("content") or ""
+        if not _extract_temp_urls(content):
+            continue
+        try:
+            new_content = commit_images(
+                old_content=None,
+                new_content=content,
+                note_id=n["id"],
+            )
+        except Exception as e:
+            print(f"[lazy-migrate] note {n.get('id')}: {e}")
+            continue
+        if new_content != content:
+            try:
+                db.update_note(n["id"], content=new_content)
+                n["content"] = new_content
+            except Exception as e:
+                print(f"[lazy-migrate] update note {n.get('id')} failed: {e}")
 
 
 def _owner():
@@ -39,6 +65,7 @@ def get_notes():
     owner    = _owner()
 
     notes  = db.get_notes(q=q, topic_id=_normalize_topic_id(topic_id), owner_id=owner)
+    _lazy_migrate(db, notes)
     topics = db.get_topics(owner_id=owner)
     return jsonify({"notes": notes, "topics": topics})
 

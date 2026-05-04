@@ -5,6 +5,8 @@ Chạy:  python app.py
 Mở:    http://localhost:5000
 """
 
+import os
+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -76,12 +78,34 @@ def forgot_page():
 @app.route("/temp/<path:filename>")
 def serve_temp_image(filename):
     """Phục vụ ảnh đang edit từ temp/ (cache filesystem). Sau Save, URL sẽ
-    được rewrite sang /img/<id> nên route này chỉ phục vụ giai đoạn editing."""
+    được rewrite sang /img/<id>.
+
+    Fallback: nếu file đã bị xóa khỏi temp/ nhưng filename vẫn còn được
+    track trong bảng images (bytes đã commit vào DB), serve trực tiếp từ
+    DB. Đảm bảo các note còn URL /temp/<f> sau migration không bị broken
+    image.
+    """
     if "/" in filename or "\\" in filename or ".." in filename:
         abort(400)
     if Path(filename).suffix.lower() not in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"}:
         abort(400)
-    return send_from_directory(str(settings.TEMP_DIR), filename)
+    filepath = settings.TEMP_DIR / filename
+    if filepath.exists():
+        return send_from_directory(str(settings.TEMP_DIR), filename)
+    # File đã bị TTL xóa → thử lookup bytes trong DB (theo filename)
+    try:
+        db = get_db()
+        for img in db.get_tracked_images():
+            if img.get("filename") == filename:
+                row = db.get_image_by_id(img.get("id"))
+                if row:
+                    resp = Response(row["data"], content_type=row.get("mime") or "application/octet-stream")
+                    resp.headers["Cache-Control"] = "public, max-age=3600"
+                    return resp
+                break
+    except Exception as e:
+        print(f"[/temp fallback] lỗi: {e}")
+    abort(404)
 
 
 @app.route("/img/<string:image_id>")
@@ -164,15 +188,33 @@ def migrate_legacy_temp_urls():
     except Exception as e:
         print(f"⚠️  Legacy /temp migration lỗi: {e}")
 
+# ── Auto-run startup tasks (works for `python app.py`, `flask run`, gunicorn…)
+# Werkzeug reloader trong debug mode spawn child process → mỗi child sẽ chạy
+# block này 1 lần. WERKZEUG_RUN_MAIN guard tránh chạy 2 lần (parent + child).
+def _run_startup_tasks():
+    try:
+        ensure_admin()
+        _db = get_db()
+        if not _db.get_notes():
+            from seed import seed_data
+            seed_data()
+        migrate_legacy_temp_urls()
+        startup_cleanup()
+    except Exception as _e:
+        import traceback
+        print(f"⚠️  Startup tasks lỗi: {_e}", flush=True)
+        traceback.print_exc()
+
+
+# Trong debug mode Werkzeug spawn child với WERKZEUG_RUN_MAIN=true.
+# Parent KHÔNG chạy startup (chỉ điều phối reloader); child chạy 1 lần.
+# Production (DEBUG=False) hoặc launcher khác (gunicorn / flask run): chạy ngay.
+if not settings.DEBUG or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+    _run_startup_tasks()
+
+
 # ── Main ──────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    ensure_admin()
-    db = get_db()
-    if not db.get_notes():
-        from seed import seed_data
-        seed_data()
-    migrate_legacy_temp_urls()
-    startup_cleanup()
     print(f"🚀 DevNotes chạy tại: http://localhost:{settings.PORT}")
     app.run(debug=settings.DEBUG, port=settings.PORT, host="0.0.0.0")

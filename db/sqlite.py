@@ -35,6 +35,67 @@ def _existing_columns(conn, table):
     return {row["name"] for row in rows}
 
 
+def _column_specs(conn, table):
+    """Trả về dict[name] → (notnull: bool, dflt_value: any, type: str).
+    Dùng để phát hiện legacy columns vướng NOT NULL không có default."""
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return {
+        row["name"]: (bool(row["notnull"]), row["dflt_value"], row["type"])
+        for row in rows
+    }
+
+
+_EXPECTED_IMAGES_COLS = {
+    "id", "filename", "folder", "note_id", "data", "mime", "created_at",
+}
+
+
+def _drop_legacy_notnull_images_columns(conn):
+    """Phát hiện cột không thuộc schema chuẩn nhưng có NOT NULL không default.
+    Mỗi cột như vậy sẽ block INSERT (vd. legacy `mime_type TEXT NOT NULL`).
+    Cố gắng DROP chúng (SQLite ≥ 3.35). Nếu không drop được, rebuild bảng."""
+    specs = _column_specs(conn, "images")
+    legacy = [
+        name for name, (notnull, dflt, _t) in specs.items()
+        if name not in _EXPECTED_IMAGES_COLS and notnull and dflt is None
+    ]
+    if not legacy:
+        return
+
+    print(f"  ↳ Detected legacy NOT NULL columns in images: {legacy}")
+    failed = []
+    for col in legacy:
+        try:
+            conn.execute(f"ALTER TABLE images DROP COLUMN {col}")
+            print(f"  ↳ Dropped legacy column images.{col}")
+        except sqlite3.OperationalError as e:
+            print(f"  ↳ DROP COLUMN images.{col} thất bại: {e}")
+            failed.append(col)
+
+    if not failed:
+        return
+
+    # Fallback: rebuild bảng. Giữ lại các cột chuẩn, bỏ legacy.
+    print("  ↳ Rebuilding images table to drop legacy columns…")
+    keep_cols = sorted(_EXPECTED_IMAGES_COLS & set(_column_specs(conn, "images").keys()))
+    cols_csv = ", ".join(keep_cols)
+    conn.executescript(f"""
+        CREATE TABLE images_new (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            filename   TEXT,
+            folder     TEXT NOT NULL DEFAULT 'uploads',
+            note_id    TEXT,
+            data       BLOB,
+            mime       TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+        INSERT INTO images_new ({cols_csv}) SELECT {cols_csv} FROM images;
+        DROP TABLE images;
+        ALTER TABLE images_new RENAME TO images;
+    """)
+    print("  ↳ images table rebuilt successfully")
+
+
 def init():
     """Tạo bảng và chạy migration nếu cần."""
     with get_conn() as conn:
@@ -111,6 +172,10 @@ def init():
                 except sqlite3.OperationalError as e:
                     if "duplicate column" not in str(e).lower():
                         raise
+
+        # Phát hiện & xử lý cột NOT NULL legacy không thuộc schema chuẩn
+        # (vd. mime_type TEXT NOT NULL từ schema custom cũ) — block INSERT.
+        _drop_legacy_notnull_images_columns(conn)
 
         # Migration otp_tokens: email → username
         otp_cols = _existing_columns(conn, "otp_tokens")

@@ -103,6 +103,32 @@ body.light-mode .tag {
   border-color: #d4d0f7;
 }
 
+/* ── Topic-colored tags (use --tc custom property) ── */
+.topic-tag {
+  color: var(--tc);
+  background: color-mix(in srgb, var(--tc) 7%, transparent);
+  border-color: color-mix(in srgb, var(--tc) 13%, transparent);
+}
+
+.detail-topic-badge[style] {
+  background: color-mix(in srgb, var(--tc) 10%, transparent);
+  color: var(--tc);
+  border: 1px solid color-mix(in srgb, var(--tc) 20%, transparent);
+}
+
+/* Light mode: darken topic colors for readability on white bg */
+body.light-mode .topic-tag {
+  color: color-mix(in srgb, var(--tc) 55%, black);
+  background: color-mix(in srgb, var(--tc) 12%, white);
+  border-color: color-mix(in srgb, var(--tc) 25%, white);
+}
+
+body.light-mode .detail-topic-badge[style] {
+  color: color-mix(in srgb, var(--tc) 55%, black);
+  background: color-mix(in srgb, var(--tc) 12%, white);
+  border: 1px solid color-mix(in srgb, var(--tc) 25%, white);
+}
+
 /* Light mode: modal — shadow nhẹ, overlay sáng hơn */
 body.light-mode .modal-overlay {
   background: rgba(20,20,40,.45);
@@ -748,6 +774,11 @@ mark {
   color: var(--accent);
   border-radius: 2px;
   padding: 0 1px;
+}
+
+body.light-mode mark {
+  background: rgba(79, 70, 229, .15);
+  color: #4338ca;
 }
 
 /* ════════════════════════════════════════════

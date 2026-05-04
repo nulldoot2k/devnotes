@@ -76,7 +76,7 @@ const UI = (() => {
     const preview = note.content.replace(/\n/g, " ").slice(0, 190);
 
     const topicTag = topic
-      ? `<span class="tag" style="color:${color};border-color:${color}22;background:${color}11">${esc(topic.name)}</span>`
+      ? `<span class="tag topic-tag" style="--tc:${color}">${esc(topic.name)}</span>`
       : "";
 
     const tags = (note.tags || [])

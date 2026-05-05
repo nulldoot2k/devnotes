@@ -151,12 +151,16 @@ def commit_images(old_content: str | None, new_content: str, note_id) -> str:
     for old_url, new_url in rewrites.items():
         rewritten = rewritten.replace(old_url, new_url)
 
-    # ── 2. Xóa các /img/<slug> không còn được tham chiếu trong note này.
-    # Slug có thể là filename (URL mới) hoặc numeric id legacy — phân biệt
-    # theo extension để gọi đúng delete method.
+    # ── 2. Xóa các /img/<slug> không còn được tham chiếu trong note này
+    #     VÀ không được note khác tham chiếu. Slug có thể là filename (URL
+    #     mới) hoặc numeric id legacy — phân biệt theo extension để gọi đúng
+    #     delete method.
     old_slugs = set(_extract_img_slugs(old_content)) if old_content else set()
     new_slugs = set(_extract_img_slugs(rewritten))
     for slug in old_slugs - new_slugs:
+        if _image_still_referenced(db, slug, exclude_note_id=note_id):
+            # Note khác vẫn dùng ảnh này → không xóa, tránh broken refs.
+            continue
         try:
             if _looks_like_filename(slug):
                 db.delete_image_by_filename(slug)
@@ -166,6 +170,25 @@ def commit_images(old_content: str | None, new_content: str, note_id) -> str:
             print(f"[commit_images] DB delete FAILED for /img/{slug}: {e}")
 
     return rewritten
+
+
+def _image_still_referenced(db, slug: str, exclude_note_id) -> bool:
+    """True nếu /img/<slug> còn xuất hiện trong content của bất kỳ note nào
+    khác (loại trừ note đang được update). Dùng để tránh xóa row trong DB
+    khi nhiều note cùng share 1 ảnh."""
+    eid = str(exclude_note_id) if exclude_note_id is not None else None
+    try:
+        notes = db.get_notes()
+    except Exception as e:
+        # Lookup fail → không an toàn để xóa, giữ row.
+        print(f"[commit_images] _image_still_referenced lookup failed: {e}")
+        return True
+    for n in notes:
+        if eid and str(n.get("id")) == eid:
+            continue
+        if slug in _extract_img_slugs(n.get("content") or ""):
+            return True
+    return False
 
 
 def cleanup_expired_temp():

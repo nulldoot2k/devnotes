@@ -78,7 +78,7 @@ def forgot_page():
 @app.route("/temp/<path:filename>")
 def serve_temp_image(filename):
     """Phục vụ ảnh đang edit từ temp/ (cache filesystem). Sau Save, URL sẽ
-    được rewrite sang /img/<id>.
+    được rewrite sang /img/<filename>.
 
     Fallback: nếu file đã bị xóa khỏi temp/ nhưng filename vẫn còn được
     track trong bảng images (bytes đã commit vào DB), serve trực tiếp từ
@@ -108,16 +108,27 @@ def serve_temp_image(filename):
     abort(404)
 
 
-@app.route("/img/<string:image_id>")
-def serve_db_image(image_id):
-    """Phục vụ ảnh đã commit từ DB (bytes + mime). Slug = primary key của
-    bảng images: integer cho SQL backend, ObjectId hex cho Mongo."""
-    # Cắt extension nếu có (vd. /img/42.png) — lookup chỉ cần phần slug
-    slug = image_id.split(".", 1)[0]
-    if not slug:
+@app.route("/img/<path:slug>")
+def serve_db_image(slug):
+    """Phục vụ ảnh đã commit từ DB (bytes + mime).
+
+    Slug ưu tiên là `filename` (vd. `/img/20260505_092538_451288.png`) — dễ
+    grep DB và stable across re-imports. Fallback: `<numeric_id>` (vd. `/img/42`)
+    cho note legacy đã rewrite ở format cũ. Cả 2 đều resolve qua bảng images.
+    """
+    if not slug or "/" in slug or "\\" in slug or ".." in slug:
         abort(400)
     db  = get_db()
-    img = db.get_image_by_id(slug)
+
+    # 1. Thử filename trước (URL mới, deterministic)
+    img = db.get_image_by_filename(slug)
+
+    # 2. Fallback: numeric / ObjectId id (URL cũ — backward compat)
+    if not img:
+        # Cắt extension cho slug numeric (vd. /img/42.png)
+        bare = slug.split(".", 1)[0]
+        img = db.get_image_by_id(bare) if bare else None
+
     if not img:
         abort(404)
     resp = Response(img["data"], content_type=img.get("mime") or "application/octet-stream")
@@ -163,7 +174,7 @@ def startup_cleanup():
 def migrate_legacy_temp_urls():
     """
     One-shot migration: các note đã lưu trước đây tham chiếu /temp/<filename>
-    trong content. Đọc bytes từ temp/ → DB → rewrite content thành /img/<id>.
+    trong content. Đọc bytes từ temp/ → DB → rewrite content thành /img/<filename>.
     File bị mất trên đĩa thì giữ nguyên URL (sẽ 404, không crash).
     """
     try:
@@ -184,7 +195,7 @@ def migrate_legacy_temp_urls():
                 db.update_note(n["id"], content=new_content)
                 rewritten += 1
         if rewritten:
-            print(f"📦 Migrated {rewritten} note(s): /temp/* → /img/<id>")
+            print(f"📦 Migrated {rewritten} note(s): /temp/* → /img/<filename>")
     except Exception as e:
         print(f"⚠️  Legacy /temp migration lỗi: {e}")
 

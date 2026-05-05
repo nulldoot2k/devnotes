@@ -274,6 +274,23 @@ def create_backend():
             return None
         return str(d["_id"])
 
+    def get_image_by_filename(filename):
+        if not filename:
+            return None
+        d = images.find_one({"filename": filename})
+        if not d or d.get("data") is None:
+            return None
+        return {
+            "data":     bytes(d["data"]),
+            "mime":     d.get("mime") or "application/octet-stream",
+            "filename": d.get("filename"),
+        }
+
+    def delete_image_by_filename(filename):
+        if not filename:
+            return False
+        return images.delete_one({"filename": filename}).deleted_count > 0
+
     return dict(
         get_notes=get_notes, get_note=get_note,
         create_note=create_note, update_note=update_note, delete_note=delete_note,
@@ -287,6 +304,8 @@ def create_backend():
         get_tracked_images=get_tracked_images,
         upsert_image_bytes=upsert_image_bytes,
         get_image_by_id=get_image_by_id,
+        get_image_by_filename=get_image_by_filename,
         get_image_id_by_filename=get_image_id_by_filename,
         delete_image_by_id=delete_image_by_id,
+        delete_image_by_filename=delete_image_by_filename,
     )

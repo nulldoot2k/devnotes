@@ -280,10 +280,18 @@ def build_sql_backend(get_conn, P: str = "?"):
             iid = int(image_id)
         except (TypeError, ValueError):
             return None
-        with get_conn() as conn:
-            row = conn.execute(
-                f"SELECT data, mime, filename FROM images WHERE id = {P}", (iid,)
-            ).fetchone()
+        # SQLite INTEGER tối đa 8 bytes signed → guard quá lớn (vd. slug
+        # filename dạng timestamp `20260505_023106_341085` → huge int).
+        if iid < -(2**63) or iid > (2**63 - 1):
+            return None
+        try:
+            with get_conn() as conn:
+                row = conn.execute(
+                    f"SELECT data, mime, filename FROM images WHERE id = {P}",
+                    (iid,),
+                ).fetchone()
+        except OverflowError:
+            return None
         if not row:
             return None
         r = dict(row)
@@ -300,8 +308,13 @@ def build_sql_backend(get_conn, P: str = "?"):
             iid = int(image_id)
         except (TypeError, ValueError):
             return False
-        with get_conn() as conn:
-            conn.execute(f"DELETE FROM images WHERE id = {P}", (iid,))
+        if iid < -(2**63) or iid > (2**63 - 1):
+            return False
+        try:
+            with get_conn() as conn:
+                conn.execute(f"DELETE FROM images WHERE id = {P}", (iid,))
+        except OverflowError:
+            return False
         return True
 
     def get_image_id_by_filename(filename):
@@ -321,6 +334,33 @@ def build_sql_backend(get_conn, P: str = "?"):
         except (TypeError, ValueError):
             return rid
 
+    def get_image_by_filename(filename):
+        """Trả về dict {data, mime, filename} cho image có filename khớp."""
+        if not filename:
+            return None
+        with get_conn() as conn:
+            row = conn.execute(
+                f"SELECT data, mime, filename FROM images WHERE filename = {P}",
+                (filename,),
+            ).fetchone()
+        if not row:
+            return None
+        r = dict(row)
+        if r.get("data") is None:
+            return None
+        return {
+            "data":     bytes(r["data"]),
+            "mime":     r.get("mime") or "application/octet-stream",
+            "filename": r.get("filename"),
+        }
+
+    def delete_image_by_filename(filename):
+        if not filename:
+            return False
+        with get_conn() as conn:
+            conn.execute(f"DELETE FROM images WHERE filename = {P}", (filename,))
+        return True
+
     return dict(
         get_notes=get_notes, get_note=get_note,
         create_note=create_note, update_note=update_note, delete_note=delete_note,
@@ -334,6 +374,8 @@ def build_sql_backend(get_conn, P: str = "?"):
         get_tracked_images=get_tracked_images,
         upsert_image_bytes=upsert_image_bytes,
         get_image_by_id=get_image_by_id,
+        get_image_by_filename=get_image_by_filename,
         get_image_id_by_filename=get_image_id_by_filename,
         delete_image_by_id=delete_image_by_id,
+        delete_image_by_filename=delete_image_by_filename,
     )

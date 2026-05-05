@@ -14,9 +14,9 @@ notes_bp = Blueprint("notes", __name__, url_prefix="/api/notes")
 
 def _lazy_migrate(db, notes):
     """Lazy migration: với mỗi note còn /temp/<f> ref, ingest bytes vào DB
-    và rewrite content thành /img/<id>. Idempotent — nếu file đã bị TTL xóa,
-    URL giữ nguyên (không crash). Chạy in-line để bảo vệ trường hợp người
-    dùng tạo note với code cũ rồi pull code mới mà chưa restart."""
+    và rewrite content thành /img/<filename>. Idempotent — nếu file đã bị TTL
+    xóa, URL giữ nguyên (không crash). Chạy in-line để bảo vệ trường hợp
+    người dùng tạo note với code cũ rồi pull code mới mà chưa restart."""
     for n in notes:
         content = n.get("content") or ""
         if not _extract_temp_urls(content):
@@ -91,7 +91,7 @@ def create_note():
     # 1. Lưu note với content gốc (chứa /temp/<f>) để lấy note_id
     note = db.create_note(question, content, topic_id, tags, owner_id=owner)
 
-    # 2. Ingest ảnh vào DB và rewrite /temp/<f> → /img/<id>
+    # 2. Ingest ảnh vào DB và rewrite /temp/<f> → /img/<filename>
     new_content = commit_images(
         old_content=None,
         new_content=content,
@@ -136,7 +136,7 @@ def update_note(note_id):
     if note is None:
         return jsonify({"error": "Không tìm thấy note"}), 404
 
-    # 2. Ingest /temp/<f> → DB, rewrite URL, dọn /img/<id> đã bị remove
+    # 2. Ingest /temp/<f> → DB, rewrite URL, dọn /img/<slug> đã bị remove
     new_content = commit_images(
         old_content=old_note["content"],
         new_content=effective_content,

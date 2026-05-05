@@ -4,11 +4,12 @@ services/image_cache.py — Quản lý ảnh: temp/ là cache khi đang edit, DB
 Lifecycle:
   1. Upload (đang edit): bytes → temp/<filename>; URL trả cho FE = /temp/<filename>.
   2. Save note (commit_images): đọc bytes từ temp/ → upsert vào DB
-     (bytes + mime + note_id), URL trong content rewrite từ /temp/<f> → /img/<id>.
-  3. Edit + xóa ảnh: /img/<id> biến mất khỏi content → row trong DB bị delete.
+     (bytes + mime + note_id), URL trong content rewrite từ /temp/<f> → /img/<filename>.
+  3. Edit + xóa ảnh: /img/<filename> biến mất khỏi content → row trong DB bị delete.
   4. Background: file trong temp/ quá TTL bị xóa (bytes vẫn an toàn trong DB).
 
-Sau Save, content KHÔNG còn /temp/<f> nào nữa, mọi ảnh đều phục vụ qua /img/<id>.
+Sau Save, content KHÔNG còn /temp/<f> nào nữa, mọi ảnh đều phục vụ qua /img/<filename>.
+URL legacy `/img/<numeric_id>` vẫn được route resolve cho note cũ (backward compat).
 """
 
 import re
@@ -47,16 +48,21 @@ def _extract_temp_urls(content: str) -> list[str]:
     return _TEMP_URL_RE.findall(content)
 
 
-def _extract_img_ids(content: str) -> list[str]:
+def _extract_img_slugs(content: str) -> list[str]:
+    """Extract slugs từ /img/<slug> (filename hoặc numeric id legacy)."""
     if not content:
         return []
-    ids = []
+    slugs = []
     for url in _IMG_URL_RE.findall(content):
-        # /img/42  hoặc /img/42?cache=1  → "42"
         slug = url[len("/img/"):].split("?", 1)[0].split("#", 1)[0]
         if slug:
-            ids.append(slug)
-    return ids
+            slugs.append(slug)
+    return slugs
+
+
+def _looks_like_filename(slug: str) -> bool:
+    """True nếu slug nhìn như filename (có extension ảnh đã biết)."""
+    return Path(slug).suffix.lstrip(".").lower() in _MIME_BY_EXT
 
 
 def _mime_from_filename(filename: str) -> str:
@@ -106,7 +112,7 @@ def commit_images(old_content: str | None, new_content: str, note_id) -> str:
     from db import get_db
     db = get_db()
 
-    # ── 1. Ingest /temp/<f> → DB và rewrite URL
+    # ── 1. Ingest /temp/<f> → DB và rewrite URL → /img/<filename>
     rewrites: dict[str, str] = {}
     for url in _extract_temp_urls(new_content):
         filename = url.split("/")[-1]
@@ -122,37 +128,42 @@ def commit_images(old_content: str | None, new_content: str, note_id) -> str:
 
             mime = _mime_from_filename(filename)
             try:
-                image_id = db.upsert_image_bytes(filename, data, mime, note_id=note_id)
+                db.upsert_image_bytes(filename, data, mime, note_id=note_id)
             except Exception as e:
                 print(f"[commit_images] DB upsert FAILED for {filename}: {e}")
                 continue
-            rewrites[url] = f"/img/{image_id}"
+            rewrites[url] = f"/img/{filename}"
             continue
 
         # File đã mất khỏi temp/ — nhưng nếu DB đã có row cho filename này
         # (vd. commit trước đó thành công, sau đó TTL xóa file), vẫn rewrite
-        # URL → /img/<id> để FE không stuck ở /temp/<f> 404 mãi mãi.
+        # URL → /img/<filename> để FE không stuck ở /temp/<f> 404 mãi mãi.
         try:
             existing_id = db.get_image_id_by_filename(filename)
         except Exception as e:
             print(f"[commit_images] DB lookup FAILED for {filename}: {e}")
             existing_id = None
         if existing_id is not None:
-            rewrites[url] = f"/img/{existing_id}"
+            rewrites[url] = f"/img/{filename}"
         # else: file mất + DB chưa có → ảnh đã mất hẳn, để URL gốc (FE 404)
 
     rewritten = new_content
     for old_url, new_url in rewrites.items():
         rewritten = rewritten.replace(old_url, new_url)
 
-    # ── 2. Xóa các /img/<id> không còn được tham chiếu trong note này
-    old_ids = set(_extract_img_ids(old_content)) if old_content else set()
-    new_ids = set(_extract_img_ids(rewritten))
-    for img_id in old_ids - new_ids:
+    # ── 2. Xóa các /img/<slug> không còn được tham chiếu trong note này.
+    # Slug có thể là filename (URL mới) hoặc numeric id legacy — phân biệt
+    # theo extension để gọi đúng delete method.
+    old_slugs = set(_extract_img_slugs(old_content)) if old_content else set()
+    new_slugs = set(_extract_img_slugs(rewritten))
+    for slug in old_slugs - new_slugs:
         try:
-            db.delete_image_by_id(img_id)
+            if _looks_like_filename(slug):
+                db.delete_image_by_filename(slug)
+            else:
+                db.delete_image_by_id(slug)
         except Exception as e:
-            print(f"[commit_images] DB delete FAILED for /img/{img_id}: {e}")
+            print(f"[commit_images] DB delete FAILED for /img/{slug}: {e}")
 
     return rewritten
 

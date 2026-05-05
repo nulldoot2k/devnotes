@@ -3,7 +3,7 @@ routes/images.py — Blueprint /api/images/*
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Upload ảnh vào temp/ (cache filesystem khi đang edit).
 Khi note được Save, services.image_cache.commit_images sẽ đọc bytes,
-upsert vào DB và rewrite URL trong content thành /img/<id>.
+upsert vào DB và rewrite URL trong content thành /img/<filename>.
 
 Endpoints:
   POST /api/images/upload   — nhận file, lưu vào temp/, trả URL /temp/<filename>
@@ -39,8 +39,8 @@ def upload_image():
     Lưu vào temp/ (cache filesystem trong khi user đang edit).
     Trả về { "url": "/temp/<filename>", "temp": true }
 
-    Ảnh chỉ được persist vào DB khi note được Save
-    (xem services.image_cache.commit_images, URL sẽ rewrite sang /img/<id>).
+    Ảnh chỉ được persist vào DB khi note được Save (xem
+    services.image_cache.commit_images, URL sẽ rewrite sang /img/<filename>).
     """
     if "file" not in request.files:
         return jsonify({"error": "Không có file nào được gửi lên"}), 400
